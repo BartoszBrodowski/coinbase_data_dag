@@ -1,0 +1,22 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Local Airflow PostgreSQL",
+      "Group": "Local",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "airflow",
+      "Username": "airflow",
+      "SSLMode": "prefer"
+    },
+    "2": {
+      "Name": "Local Market Data PostgreSQL",
+      "Group": "Local",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "market_data",
+      "Username": "market_data_airflow",
+      "SSLMode": "prefer"
+    }
+  }
+}
