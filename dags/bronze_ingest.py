@@ -1,11 +1,14 @@
 import json
 import logging
-from contextlib import closing
 
 from coinbase_client import fetch_candles
+from utils import load_sql, market_data_connection
 
 
 logger = logging.getLogger(__name__)
+
+INSERT_BRONZE_RESPONSE_SQL = load_sql("insert_bronze_response.sql")
+SELECT_BRONZE_BY_KEY_SQL = load_sql("select_bronze_by_key.sql")
 
 
 def save_bronze_response(
@@ -20,34 +23,6 @@ def save_bronze_response(
 ):
     """Save a response once and return its Bronze ingestion ID."""
 
-    sql = """
-        INSERT INTO bronze.coinbase_candles_raw (
-            ingestion_key,
-            product_id,
-            granularity_seconds,
-            requested_start,
-            requested_end,
-            request_duration_ms,
-            http_status,
-            content_type,
-            response_headers,
-            response_body
-        )
-        VALUES (
-            %(ingestion_key)s,
-            %(product_id)s,
-            %(granularity_seconds)s,
-            %(requested_start)s,
-            %(requested_end)s,
-            %(request_duration_ms)s,
-            %(http_status)s,
-            %(content_type)s,
-            %(response_headers)s::jsonb,
-            %(response_body)s
-        )
-        ON CONFLICT (ingestion_key) DO NOTHING
-        RETURNING ingestion_id
-    """
     parameters = {
         "ingestion_key": ingestion_key,
         "product_id": product_id,
@@ -63,18 +38,14 @@ def save_bronze_response(
 
     with connection:
         with connection.cursor() as cursor:
-            cursor.execute(sql, parameters)
+            cursor.execute(INSERT_BRONZE_RESPONSE_SQL, parameters)
             inserted = cursor.fetchone()
 
             if inserted is not None:
                 return inserted[0]
 
             cursor.execute(
-                """
-                SELECT ingestion_id
-                FROM bronze.coinbase_candles_raw
-                WHERE ingestion_key = %(ingestion_key)s
-                """,
+                SELECT_BRONZE_BY_KEY_SQL,
                 {"ingestion_key": ingestion_key},
             )
             existing = cursor.fetchone()
@@ -82,12 +53,13 @@ def save_bronze_response(
             if existing is None:
                 raise RuntimeError("existing Bronze response could not be read")
 
+            existing_id = existing[0]
             logger.info(
                 "coinbase_bronze_reused ingestion_key=%s ingestion_id=%s",
                 ingestion_key,
-                existing[0],
+                existing_id,
             )
-            return existing[0]
+            return existing_id
 
 
 def ingest_one_interval(
@@ -98,8 +70,6 @@ def ingest_one_interval(
     start,
     end,
 ):
-    from airflow.providers.postgres.hooks.postgres import PostgresHook
-
     response = fetch_candles(
         product_id=product_id,
         granularity_seconds=granularity_seconds,
@@ -107,9 +77,7 @@ def ingest_one_interval(
         end=end,
     )
 
-    hook = PostgresHook(postgres_conn_id="market_data")
-
-    with closing(hook.get_conn()) as connection:
+    with market_data_connection() as connection:
         ingestion_id = save_bronze_response(
             connection,
             ingestion_key=ingestion_key,

@@ -41,6 +41,7 @@
 # FLYWAY_USER                - PostgreSQL role used only for market-data migrations.
 # FLYWAY_PASSWORD            - Password for the Flyway migration role.
 # AIRFLOW_MARKET_DATA_PASSWORD - Password for Airflow's least-privilege market-data role.
+# DASHBOARD_DB_PASSWORD      - Password for the dashboard's read-only Gold role.
 # PGADMIN_DEFAULT_EMAIL      - Initial pgAdmin login email.
 # PGADMIN_DEFAULT_PASSWORD   - Initial pgAdmin login password.
 #
@@ -65,9 +66,9 @@ x-airflow-common:
     # credentials above must never be reused by pipeline code.
     AIRFLOW_CONN_MARKET_DATA: postgresql://market_data_airflow:${AIRFLOW_MARKET_DATA_PASSWORD}@postgres:5432/${MARKET_DATA_DB}
   volumes:
-    - ../dags:/opt/airflow/dags
-    - ../logs:/opt/airflow/logs
-    - ../plugins:/opt/airflow/plugins
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
   user: "${AIRFLOW_UID}:0"
   depends_on:
     &airflow-common-depends-on
@@ -88,9 +89,10 @@ services:
       FLYWAY_USER: ${FLYWAY_USER}
       FLYWAY_PASSWORD: ${FLYWAY_PASSWORD}
       AIRFLOW_MARKET_DATA_PASSWORD: ${AIRFLOW_MARKET_DATA_PASSWORD}
+      DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD}
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
-      - ../postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -111,7 +113,7 @@ services:
       FLYWAY_BASELINE_ON_MIGRATE: "false"
       FLYWAY_CLEAN_DISABLED: "true"
     volumes:
-      - ../sql/migrations:/flyway/sql:ro
+      - ./sql/migrations:/flyway/sql:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -119,8 +121,8 @@ services:
         condition: service_completed_successfully
 
   # PostgreSQL only runs /docker-entrypoint-initdb.d for a brand-new volume.
-  # This one-shot service also provisions/synchronizes the runtime role for an
-  # existing development volume before Flyway applies grants.
+  # This one-shot service also provisions/synchronizes application roles for
+  # an existing development volume before Flyway applies grants.
   market-data-role-init:
     image: postgres:13
     profiles:
@@ -131,9 +133,10 @@ services:
       MARKET_DATA_DB: ${MARKET_DATA_DB}
       FLYWAY_USER: ${FLYWAY_USER}
       AIRFLOW_MARKET_DATA_PASSWORD: ${AIRFLOW_MARKET_DATA_PASSWORD}
+      DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD}
     volumes:
-      - ../postgres/provision:/scripts:ro
-    entrypoint: ["/bin/bash", "/scripts/provision_airflow_runtime_role.sh"]
+      - ./postgres/provision:/scripts:ro
+    entrypoint: ["/bin/bash", "/scripts/provision_market_data_roles.sh"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -172,6 +175,22 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+
+  dashboard:
+    build:
+      context: ./dashboard
+    environment:
+      MARKET_DATA_HOST: postgres
+      MARKET_DATA_PORT: 5432
+      MARKET_DATA_DB: ${MARKET_DATA_DB}
+      MARKET_DATA_USER: market_data_dashboard
+      MARKET_DATA_PASSWORD: ${DASHBOARD_DB_PASSWORD}
+    ports:
+      - "8501:8501"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
 
   airflow-scheduler:
     <<: *airflow-common

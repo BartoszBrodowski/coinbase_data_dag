@@ -1,12 +1,16 @@
 import json
 import logging
-from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from utils import load_sql, market_data_connection
+
 
 logger = logging.getLogger(__name__)
+
+SELECT_BRONZE_FOR_SILVER_SQL = load_sql("select_bronze_for_silver.sql")
+UPSERT_SILVER_CANDLES_SQL = load_sql("upsert_silver_candles.sql")
 
 
 @dataclass(frozen=True)
@@ -50,11 +54,11 @@ def parse_candles(
         if not requested_start <= candle_start < requested_end:
             continue
 
-        low = Decimal(str(low))
-        high = Decimal(str(high))
-        opening = Decimal(str(opening))
-        close = Decimal(str(close))
-        volume = Decimal(str(volume))
+        low = Decimal(low)
+        high = Decimal(high)
+        opening = Decimal(opening)
+        close = Decimal(close)
+        volume = Decimal(volume)
 
         prices = (low, high, opening, close)
         if not all(value.is_finite() for value in (*prices, volume)):
@@ -63,7 +67,7 @@ def parse_candles(
             raise ValueError(f"candle {index} prices must be positive")
         if volume < 0:
             raise ValueError(f"candle {index} volume must be nonnegative")
-        if low > high or not low <= opening <= high or not low <= close <= high:
+        if not low <= opening <= high or not low <= close <= high:
             raise ValueError(f"candle {index} has invalid OHLC values")
 
         candle = Candle(
@@ -87,36 +91,6 @@ def parse_candles(
     return sorted(candles_by_start.values(), key=lambda candle: candle.candle_start)
 
 
-UPSERT_SQL = """
-    INSERT INTO silver.candles (
-        source,
-        product_id,
-        granularity_seconds,
-        candle_start,
-        open_price,
-        high_price,
-        low_price,
-        close_price,
-        volume,
-        bronze_ingestion_id
-    )
-    VALUES ('coinbase', %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    ON CONFLICT (
-        source,
-        product_id,
-        granularity_seconds,
-        candle_start
-    )
-    DO UPDATE SET
-        open_price = EXCLUDED.open_price,
-        high_price = EXCLUDED.high_price,
-        low_price = EXCLUDED.low_price,
-        close_price = EXCLUDED.close_price,
-        volume = EXCLUDED.volume,
-        bronze_ingestion_id = EXCLUDED.bronze_ingestion_id
-"""
-
-
 def upsert_candles(cursor, candles):
     if not candles:
         return 0
@@ -135,29 +109,16 @@ def upsert_candles(cursor, candles):
         )
         for candle in candles
     ]
-    cursor.executemany(UPSERT_SQL, rows)
+    cursor.executemany(UPSERT_SILVER_CANDLES_SQL, rows)
     return len(rows)
 
 
 def transform_bronze_to_silver(ingestion_id):
-    from airflow.providers.postgres.hooks.postgres import PostgresHook
-
-    hook = PostgresHook(postgres_conn_id="market_data")
-
-    with closing(hook.get_conn()) as connection:
+    with market_data_connection() as connection:
         with connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    """
-                    SELECT
-                        product_id,
-                        granularity_seconds,
-                        requested_start,
-                        requested_end,
-                        response_body
-                    FROM bronze.coinbase_candles_raw
-                    WHERE ingestion_id = %(ingestion_id)s
-                    """,
+                    SELECT_BRONZE_FOR_SILVER_SQL,
                     {"ingestion_id": ingestion_id},
                 )
                 bronze = cursor.fetchone()

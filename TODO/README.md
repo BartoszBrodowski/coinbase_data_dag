@@ -24,11 +24,11 @@ Szczegółowe kryteria ukończenia znajdują się w [TICKETS.md](TICKETS.md).
 - [ ] Wykonaj TICKET-004: zapis Bronze dla jednego przedziału.
 - [ ] Wykonaj TICKET-005: transformacja Bronze → Silver.
 - [ ] Wykonaj TICKET-006: model Gold.
-- [ ] Wykonaj TICKET-007: połączenie kroków w DAG.
+- [x] Wykonaj TICKET-007: połączenie kroków w DAG.
 
 ## Etap 3 — prezentacja
 
-- [ ] Wykonaj TICKET-008: prosty wykres świec z Gold.
+- [x] Wykonaj TICKET-008: prosty wykres świec z Gold.
 - [ ] Sprawdź pusty zakres, jeden rekord i zwykły zakres danych.
 
 ## Etap 4 — niezawodność
@@ -47,4 +47,3 @@ Szczegółowe kryteria ukończenia znajdują się w [TICKETS.md](TICKETS.md).
 - [ ] Błąd API jest widoczny w Airflow i podlega ograniczonemu retry.
 - [ ] Interfejs pokazuje wykres świec z danych Gold.
 - [ ] Testy sprawdzają główną transformację oraz klucz unikalny.
-

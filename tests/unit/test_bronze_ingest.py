@@ -102,3 +102,26 @@ class BronzeIngestTest(unittest.TestCase):
         self.assertEqual(ingestion_id, 42)
         self.assertTrue(connection.committed)
         self.assertEqual(len(connection.cursor_instance.executions), 2)
+
+    def test_fails_if_existing_ingestion_cannot_be_read(self):
+        start = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 1, 1, 1, tzinfo=timezone.utc)
+        response = CoinbaseResponse(
+            status_code=200,
+            body="[]",
+            content_type="application/json",
+            headers={},
+            duration_ms=125,
+        )
+        connection = _Connection(results=(None, None))
+
+        with self.assertRaisesRegex(RuntimeError, "could not be read"):
+            save_bronze_response(
+                connection,
+                ingestion_key="missing",
+                product_id="BTC-USD",
+                granularity_seconds=3600,
+                start=start,
+                end=end,
+                response=response,
+            )
