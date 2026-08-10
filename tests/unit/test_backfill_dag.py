@@ -7,7 +7,7 @@ from pathlib import Path
 DAGS_DIRECTORY = Path(__file__).parents[2] / "dags"
 sys.path.insert(0, str(DAGS_DIRECTORY))
 
-from coinbase_backfill_dag import (
+from candles.backfill_dag import (
     MAX_ACTIVE_API_TASKS,
     dag,
     parse_utc_datetime,

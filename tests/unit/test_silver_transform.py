@@ -9,7 +9,7 @@ from unittest.mock import Mock
 DAGS_DIRECTORY = Path(__file__).parents[2] / "dags"
 sys.path.insert(0, str(DAGS_DIRECTORY))
 
-from silver_transform import parse_candles, upsert_candles
+from candles.silver_transform import parse_candles, upsert_candles
 
 
 FIXTURE_PATH = Path(__file__).parents[2] / "test_fixture.json"

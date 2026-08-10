@@ -1,0 +1,100 @@
+import json
+import sys
+import unittest
+from datetime import timezone
+from decimal import Decimal
+from pathlib import Path
+
+
+DAGS_DIRECTORY = Path(__file__).parents[2] / "dags"
+sys.path.insert(0, str(DAGS_DIRECTORY))
+
+from trades.silver_transform import parse_trades, transform_bronze_to_silver
+
+
+class _Cursor:
+    def __init__(self, bronze):
+        self.bronze = bronze
+        self.executions = []
+        self.batch = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return None
+
+    def execute(self, sql, parameters):
+        self.executions.append((sql, parameters))
+
+    def executemany(self, sql, rows):
+        self.batch = (sql, rows)
+
+    def fetchone(self):
+        return self.bronze
+
+
+class _Connection:
+    def __init__(self, bronze):
+        self.cursor_instance = _Cursor(bronze)
+        self.committed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exception_type, *_):
+        self.committed = exception_type is None
+
+    def cursor(self):
+        return self.cursor_instance
+
+
+class TradeSilverTransformTest(unittest.TestCase):
+    def test_parses_fixture_into_typed_utc_trades(self):
+        fixture = (Path(__file__).parents[2] / "example_data" / "trades.json").read_text(
+            encoding="utf-8"
+        )
+
+        trades = parse_trades(fixture)
+
+        self.assertEqual([trade.trade_id for trade in trades], [1068720621, 1068720622])
+        self.assertEqual(trades[0].price, Decimal("65139.74000000"))
+        self.assertEqual(trades[0].time.tzinfo, timezone.utc)
+
+    def test_rejects_an_invalid_maker_side(self):
+        payload = json.dumps(
+            [
+                {
+                    "trade_id": 1,
+                    "price": "1",
+                    "size": "1",
+                    "time": "2026-08-10T09:22:43Z",
+                    "side": "hold",
+                }
+            ]
+        )
+
+        with self.assertRaisesRegex(ValueError, "invalid maker side"):
+            parse_trades(payload)
+
+    def test_commits_silver_before_advancing_the_watermark(self):
+        bronze = (
+            "ingestion-1",
+            "BTC-USD",
+            "1068720621",
+            "manual__2026-08-10",
+            200,
+            '[{"trade_id": 1068720622, "side": "sell", "size": "0.1", '
+            '"price": "65139.75", "time": "2026-08-10T09:22:43Z"}]',
+        )
+        connection = _Connection(bronze)
+
+        rows_processed = transform_bronze_to_silver(connection, 91)
+
+        self.assertEqual(rows_processed, 1)
+        self.assertTrue(connection.committed)
+        self.assertEqual(connection.cursor_instance.batch[1][0][2], 1068720622)
+        executed_sql = [sql for sql, _ in connection.cursor_instance.executions]
+        self.assertIn("UPDATE control.trade_ingestions", executed_sql[1])
+        self.assertIn("INSERT INTO control.trade_watermarks", executed_sql[2])
+

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from utils import load_sql, market_data_connection
+from candles.utils import load_sql, market_data_connection
 
 
 logger = logging.getLogger(__name__)

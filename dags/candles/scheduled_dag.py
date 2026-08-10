@@ -3,10 +3,10 @@ from datetime import datetime, timezone
 import pendulum
 from airflow.sdk import dag, get_current_context, task
 from airflow.timetables.interval import CronDataIntervalTimetable
-from bronze_ingest import ingest_one_interval
-from gold_load import load_silver_to_gold, validate_gold_quality
-from silver_transform import transform_bronze_to_silver
-from utils import COINBASE_API_RETRY_ARGS, build_ingestion_key
+from candles.bronze_ingest import ingest_one_interval
+from candles.gold_load import load_silver_to_gold, validate_gold_quality
+from candles.silver_transform import transform_bronze_to_silver
+from candles.utils import COINBASE_API_RETRY_ARGS, build_ingestion_key
 
 
 PRODUCT_ID = "BTC-USD"

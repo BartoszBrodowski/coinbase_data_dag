@@ -1,4 +1,4 @@
-"""Minimal Coinbase Exchange client for fetching one explicit candle range."""
+"""Small Coinbase Exchange client shared by market-data ingestion modules."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 COINBASE_API_URL = "https://api.exchange.coinbase.com"
 SUPPORTED_GRANULARITIES = frozenset({60, 300, 900, 3600, 21600, 86400})
 MAX_CANDLES_PER_REQUEST = 300
+MAX_TRADES_PER_REQUEST = 1_000
 _PRODUCT_ID_PATTERN = re.compile(r"^[A-Z0-9]+-[A-Z0-9]+$")
 
 
@@ -57,15 +58,43 @@ def fetch_candles(
 
     _validate_request(product_id, granularity_seconds, start, end)
 
-    query = urlencode(
+    return _fetch(
+        f"/products/{product_id}/candles",
         {
             "start": _format_utc(start),
             "end": _format_utc(end),
             "granularity": granularity_seconds,
-        }
+        },
     )
+
+
+def fetch_trades(
+    *,
+    product_id: str,
+    before: str | None = None,
+    after: str | None = None,
+    limit: int = MAX_TRADES_PER_REQUEST,
+) -> CoinbaseResponse:
+    """Fetch one cursor-paginated page of product trades."""
+
+    _validate_product_id(product_id)
+    if before is not None and after is not None:
+        raise ValueError("before and after cursors cannot be used together")
+    if not isinstance(limit, int) or not 1 <= limit <= MAX_TRADES_PER_REQUEST:
+        raise ValueError("trade limit must be between 1 and 1000")
+
+    query = {"limit": limit}
+    if before is not None:
+        query["before"] = before
+    if after is not None:
+        query["after"] = after
+
+    return _fetch(f"/products/{product_id}/trades", query)
+
+
+def _fetch(path, query) -> CoinbaseResponse:
     request = Request(
-        f"{COINBASE_API_URL}/products/{product_id}/candles?{query}",
+        f"{COINBASE_API_URL}{path}?{urlencode(query)}",
         headers={"Accept": "application/json", "User-Agent": "coinbase-client/1.0"},
     )
 
@@ -82,8 +111,10 @@ def fetch_candles(
 
 def _build_response(status_code, body, headers, request_started) -> CoinbaseResponse:
     stored_headers = {}
-    if headers.get("Retry-After"):
-        stored_headers["Retry-After"] = headers["Retry-After"]
+    for header_name in ("Retry-After", "CB-BEFORE", "CB-AFTER"):
+        value = headers.get(header_name)
+        if value:
+            stored_headers[header_name] = value
 
     return CoinbaseResponse(
         status_code=status_code,
@@ -100,8 +131,7 @@ def _validate_request(
     start: datetime,
     end: datetime,
 ) -> None:
-    if not _PRODUCT_ID_PATTERN.fullmatch(product_id):
-        raise ValueError("product_id must look like 'BTC-USD'")
+    _validate_product_id(product_id)
     if granularity_seconds not in SUPPORTED_GRANULARITIES:
         raise ValueError("unsupported Coinbase candle granularity")
     if start.tzinfo is None or end.tzinfo is None:
@@ -112,6 +142,11 @@ def _validate_request(
     requested_candles = (end - start).total_seconds() / granularity_seconds
     if requested_candles > MAX_CANDLES_PER_REQUEST:
         raise ValueError("requested interval exceeds Coinbase's 300-candle limit")
+
+
+def _validate_product_id(product_id: str) -> None:
+    if not _PRODUCT_ID_PATTERN.fullmatch(product_id):
+        raise ValueError("product_id must look like 'BTC-USD'")
 
 
 def _format_utc(value: datetime) -> str:

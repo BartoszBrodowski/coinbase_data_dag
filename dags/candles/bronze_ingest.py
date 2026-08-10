@@ -1,8 +1,8 @@
 import json
 import logging
 
-from coinbase_client import fetch_candles
-from utils import load_sql, market_data_connection
+from candles.utils import load_sql, market_data_connection
+from shared.coinbase_client import fetch_candles
 
 
 logger = logging.getLogger(__name__)

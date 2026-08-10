@@ -1,4 +1,5 @@
 import json
+import sys
 import unittest
 from email.message import Message
 from io import BytesIO
@@ -7,7 +8,10 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 
-from dags.coinbase_client import CoinbaseAPIError, fetch_candles
+DAGS_DIRECTORY = Path(__file__).parents[2] / "dags"
+sys.path.insert(0, str(DAGS_DIRECTORY))
+
+from shared.coinbase_client import CoinbaseAPIError, fetch_candles, fetch_trades
 
 
 class _Response:
@@ -34,7 +38,7 @@ class CoinbaseClientTest(unittest.TestCase):
     def test_fetches_exact_explicit_interval(self):
         fixture = [[1735689600, 92743.63, 94960.91, 93347.59, 94383.59, 6871.73848196]]
         raw_body = json.dumps(fixture)
-        with patch("dags.coinbase_client.urlopen", return_value=_Response(raw_body)) as urlopen:
+        with patch("shared.coinbase_client.urlopen", return_value=_Response(raw_body)) as urlopen:
             result = fetch_candles(
                 product_id="BTC-USD",
                 granularity_seconds=3600,
@@ -68,7 +72,7 @@ class CoinbaseClientTest(unittest.TestCase):
             fp=BytesIO(b'{"message":"NotFound"}'),
         )
 
-        with patch("dags.coinbase_client.urlopen", side_effect=error):
+        with patch("shared.coinbase_client.urlopen", side_effect=error):
             response = fetch_candles(
                 product_id="UNKNOWN-USD",
                 granularity_seconds=3600,
@@ -98,6 +102,23 @@ class CoinbaseClientTest(unittest.TestCase):
                 start=self.start,
                 end=self.start + timedelta(minutes=301),
             )
+
+    def test_fetches_one_trade_page_with_cursor_headers(self):
+        response = _Response("[]")
+        response.headers["CB-BEFORE"] = "1068720622"
+        response.headers["CB-AFTER"] = "1068720621"
+
+        with patch("shared.coinbase_client.urlopen", return_value=response) as urlopen:
+            result = fetch_trades(product_id="BTC-USD", after="1068720000")
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(urlsplit(request.full_url).path, "/products/BTC-USD/trades")
+        self.assertEqual(
+            parse_qs(urlsplit(request.full_url).query),
+            {"limit": ["1000"], "after": ["1068720000"]},
+        )
+        self.assertEqual(result.headers["CB-BEFORE"], "1068720622")
+        self.assertEqual(result.headers["CB-AFTER"], "1068720621")
 
 
 if __name__ == "__main__":

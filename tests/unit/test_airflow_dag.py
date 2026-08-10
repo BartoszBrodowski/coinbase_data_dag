@@ -9,7 +9,7 @@ from airflow.timetables.interval import CronDataIntervalTimetable
 DAGS_DIRECTORY = Path(__file__).parents[2] / "dags"
 sys.path.insert(0, str(DAGS_DIRECTORY))
 
-from test_dag import DAG_SCHEDULE, DAG_START_DATE, dag, get_data_interval
+from candles.scheduled_dag import DAG_SCHEDULE, DAG_START_DATE, dag, get_data_interval
 
 
 class AirflowDagTest(unittest.TestCase):

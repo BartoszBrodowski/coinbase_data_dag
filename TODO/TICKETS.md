@@ -129,13 +129,12 @@ przyrostowego ingestu na kontrolowanym oknie danych.
 **Cel edukacyjny:** ekstrakcja przyrostowa, cursor pagination, watermarks,
 deduplikacja, bezpieczne wznawianie DAG-a, capacity planning i retencja danych.
 
-- [ ] Opisz kontrakt `GET /products/{product_id}/trades`, kierunek kursorów `before` i `after` oraz znaczenie pola `side`; zapisz fixture pierwszej i kolejnej strony.
-- [ ] Dodaj migrację `bronze.coinbase_trades_raw` przechowującą niezmieniony payload strony, produkt, czas żądania, status HTTP oraz nagłówki `CB-BEFORE` i `CB-AFTER`.
-- [ ] Dodaj `silver.trades` z kluczem `(source, product_id, trade_id)`, czasem UTC, ceną i wielkością jako `NUMERIC` oraz stroną maker.
-- [ ] Dodaj migrację Flyway tworzącą schemat `control`, minimalne uprawnienia roli Airflow i tabelę `control.trade_watermarks` z ostatnim zatwierdzonym kursorem, najwyższym `trade_id`, czasem sukcesu i identyfikatorem runu.
-- [ ] Zaimplementuj pobieranie strony niezależnie od Airflow oraz zapis Bronze, transformację Silver i aktualizację watermarku w kontrolowanej kolejności.
-- [ ] Aktualizuj watermark dopiero po zatwierdzeniu Silver; awaria pomiędzy Bronze i Silver ma prowadzić do bezpiecznego ponowienia, a nie utraty transakcji.
-- [ ] Pierwszą wersję uruchom wyłącznie dla `BTC-USD`; kolejne produkty dodawaj dopiero po pomiarze tygodniowego przyrostu danych.
+- [x] Dodaj migrację `bronze.coinbase_trades_raw` przechowującą niezmieniony payload strony, produkt, czas żądania, status HTTP oraz nagłówki `CB-BEFORE` i `CB-AFTER`.
+- [x] Dodaj `silver.trades` z kluczem `(source, product_id, trade_id)`, czasem UTC, ceną i wielkością jako `NUMERIC` oraz stroną maker.
+- [x] Dodaj migrację Flyway tworzącą schemat `control`, minimalne uprawnienia roli Airflow i tabelę `control.trade_watermarks` z ostatnim zatwierdzonym kursorem, najwyższym `trade_id`, czasem sukcesu i identyfikatorem runu.
+- [x] Zaimplementuj pobieranie strony niezależnie od Airflow oraz zapis Bronze, transformację Silver i aktualizację watermarku w kontrolowanej kolejności.
+- [x] Aktualizuj watermark dopiero po zatwierdzeniu Silver; awaria pomiędzy Bronze i Silver ma prowadzić do bezpiecznego ponowienia, a nie utraty transakcji.
+- [x] Pierwszą wersję uruchom wyłącznie dla `BTC-USD`; kolejne produkty dodawaj dopiero po pomiarze tygodniowego przyrostu danych.
 - [ ] Utwórz DAG uruchamiany początkowo co 10–15 minut z `max_active_runs=1` i osobnym Airflow Pool dla endpointu trades.
 - [ ] Wprowadź konfigurowalne `max_pages_per_run` oraz maksymalny czas zadania; zacznij od 2–5 stron, a pozostawiony backlog obsłuż w kolejnych runach.
 - [ ] Ponawiaj timeouty, HTTP 429 i 5xx z exponential backoff; nie ponawiaj deterministycznych błędów kontraktu danych.

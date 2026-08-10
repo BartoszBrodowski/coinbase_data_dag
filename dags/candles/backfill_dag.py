@@ -5,11 +5,11 @@ from datetime import datetime, timedelta, timezone
 from airflow.sdk import Param, dag, get_current_context, task
 from airflow.sdk.exceptions import AirflowFailException
 
-from bronze_ingest import ingest_one_interval
-from coinbase_client import MAX_CANDLES_PER_REQUEST, SUPPORTED_GRANULARITIES
-from gold_load import load_silver_to_gold, validate_gold_quality
-from silver_transform import transform_bronze_to_silver
-from utils import COINBASE_API_RETRY_ARGS, build_ingestion_key
+from candles.bronze_ingest import ingest_one_interval
+from candles.gold_load import load_silver_to_gold, validate_gold_quality
+from candles.silver_transform import transform_bronze_to_silver
+from candles.utils import COINBASE_API_RETRY_ARGS, build_ingestion_key
+from shared.coinbase_client import MAX_CANDLES_PER_REQUEST, SUPPORTED_GRANULARITIES
 
 
 BACKFILL_START_DATE = datetime(2025, 1, 1, tzinfo=timezone.utc)

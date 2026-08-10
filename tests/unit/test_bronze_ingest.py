@@ -7,8 +7,8 @@ from pathlib import Path
 DAGS_DIRECTORY = Path(__file__).parents[2] / "dags"
 sys.path.insert(0, str(DAGS_DIRECTORY))
 
-from bronze_ingest import save_bronze_response
-from coinbase_client import CoinbaseResponse
+from candles.bronze_ingest import save_bronze_response
+from shared.coinbase_client import CoinbaseResponse
 
 
 class _Cursor:

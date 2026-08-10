@@ -1,6 +1,6 @@
 import logging
 
-from utils import load_sql, market_data_connection
+from candles.utils import load_sql, market_data_connection
 
 
 logger = logging.getLogger(__name__)

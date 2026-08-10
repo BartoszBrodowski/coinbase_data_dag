@@ -6,7 +6,7 @@ from unittest.mock import Mock
 DAGS_DIRECTORY = Path(__file__).parents[2] / "dags"
 sys.path.insert(0, str(DAGS_DIRECTORY))
 
-from gold_load import check_gold_quality, upsert_gold
+from candles.gold_load import check_gold_quality, upsert_gold
 
 
 class GoldLoadTest(unittest.TestCase):
