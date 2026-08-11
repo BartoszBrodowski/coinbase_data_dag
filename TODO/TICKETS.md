@@ -131,14 +131,14 @@ deduplikacja, bezpieczne wznawianie DAG-a, capacity planning i retencja danych.
 
 - [x] Dodaj migrację `bronze.coinbase_trades_raw` przechowującą niezmieniony payload strony, produkt, czas żądania, status HTTP oraz nagłówki `CB-BEFORE` i `CB-AFTER`.
 - [x] Dodaj `silver.trades` z kluczem `(source, product_id, trade_id)`, czasem UTC, ceną i wielkością jako `NUMERIC` oraz stroną maker.
-- [x] Dodaj migrację Flyway tworzącą schemat `control`, minimalne uprawnienia roli Airflow i tabelę `control.trade_watermarks` z ostatnim zatwierdzonym kursorem, najwyższym `trade_id`, czasem sukcesu i identyfikatorem runu.
+- [x] Dodaj migrację Flyway tworzącą schemat `control`, minimalne uprawnienia roli Airflow i zunifikowany stan `control.trade_ingestions` z kursorem, najwyższym `trade_id`, trybem oraz postępem procesu.
 - [x] Zaimplementuj pobieranie strony niezależnie od Airflow oraz zapis Bronze, transformację Silver i aktualizację watermarku w kontrolowanej kolejności.
 - [x] Aktualizuj watermark dopiero po zatwierdzeniu Silver; awaria pomiędzy Bronze i Silver ma prowadzić do bezpiecznego ponowienia, a nie utraty transakcji.
 - [x] Pierwszą wersję uruchom wyłącznie dla `BTC-USD`; kolejne produkty dodawaj dopiero po pomiarze tygodniowego przyrostu danych.
-- [ ] Utwórz DAG uruchamiany początkowo co 10–15 minut z `max_active_runs=1` i osobnym Airflow Pool dla endpointu trades.
-- [ ] Wprowadź konfigurowalne `max_pages_per_run` oraz maksymalny czas zadania; zacznij od 2–5 stron, a pozostawiony backlog obsłuż w kolejnych runach.
-- [ ] Ponawiaj timeouty, HTTP 429 i 5xx z exponential backoff; nie ponawiaj deterministycznych błędów kontraktu danych.
-- [ ] Dodaj ograniczony tryb catch-up z jawnym najstarszym czasem lub kursorem; nie pozwalaj na nieograniczone pobranie całej historii.
+- [x] Utwórz DAG uruchamiany początkowo co 10–15 minut z `max_active_runs=1` i osobnym Airflow Pool dla endpointu trades.
+- [x] Wprowadź konfigurowalne `max_pages_per_run` oraz maksymalny czas zadania; zacznij od 2–5 stron, a pozostawiony backlog obsłuż w kolejnych runach.
+- [x] Ponawiaj timeouty, HTTP 429 i 5xx z exponential backoff; nie ponawiaj deterministycznych błędów kontraktu danych.
+- [x] Dodaj ograniczony tryb catch-up z jawnym najstarszym czasem lub kursorem; nie pozwalaj na nieograniczone pobranie całej historii.
 - [ ] Dodaj `gold.trade_activity_hourly` z liczbą transakcji, base volume, quote volume, VWAP oraz licznikami maker buy/sell; agregaty przechowuj dłużej niż pojedyncze transakcje.
 - [ ] Zdefiniuj konfigurowalną politykę retencji; jako wartości startowe przyjmij 7 dni dla Bronze i 30 dni dla Silver, ale zatwierdź je po pierwszym tygodniu pomiarów.
 - [ ] Dodaj dzienny krok retencji usuwający dane małymi partiami dopiero po udanym zbudowaniu i sprawdzeniu agregatów; zachowaj watermarki i metryki wykonania.

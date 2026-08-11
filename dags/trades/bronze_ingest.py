@@ -16,15 +16,13 @@ INSERT_TRADE_PAGE_SQL = (SQL_DIRECTORY / "insert_bronze_trade_page.sql").read_te
 SELECT_TRADE_PAGE_BY_KEY_SQL = (
     SQL_DIRECTORY / "select_bronze_trade_page_by_key.sql"
 ).read_text(encoding="utf-8")
-INSERT_TRADE_INGESTION_SQL = (
-    SQL_DIRECTORY / "insert_trade_ingestion.sql"
-).read_text(encoding="utf-8")
 
 
 def save_trade_page(
     connection,
     *,
     ingestion_key,
+    trade_ingestion_key,
     product_id,
     response,
     pipeline_run_id=None,
@@ -37,6 +35,7 @@ def save_trade_page(
 
     parameters = {
         "ingestion_key": ingestion_key,
+        "trade_ingestion_key": trade_ingestion_key,
         "product_id": product_id,
         "response_cb_before": response.headers.get("CB-BEFORE"),
         "response_cb_after": response.headers.get("CB-AFTER"),
@@ -66,7 +65,6 @@ def save_trade_page(
             else:
                 ingestion_id = inserted[0]
 
-            cursor.execute(INSERT_TRADE_INGESTION_SQL, {"ingestion_key": ingestion_key})
             return ingestion_id
 
 
@@ -74,6 +72,7 @@ def ingest_trade_page(
     connection,
     *,
     ingestion_key,
+    trade_ingestion_key,
     product_id,
     before=None,
     after=None,
@@ -95,6 +94,7 @@ def ingest_trade_page(
     ingestion_id = save_trade_page(
         connection,
         ingestion_key=ingestion_key,
+        trade_ingestion_key=trade_ingestion_key,
         product_id=product_id,
         response=response,
         pipeline_run_id=pipeline_run_id,

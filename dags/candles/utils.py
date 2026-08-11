@@ -1,37 +1,16 @@
-from contextlib import closing, contextmanager
-from datetime import timedelta
+"""Candle-specific SQL loading plus shared Airflow helpers."""
+
 from pathlib import Path
+
+from shared.utils import (
+    COINBASE_API_RETRY_ARGS,
+    build_ingestion_key,
+    market_data_connection,
+)
 
 
 SQL_DIRECTORY = Path(__file__).with_name("sql")
-COINBASE_API_RETRY_ARGS = {
-    "retries": 2,
-    "retry_delay": timedelta(minutes=1),
-    "retry_exponential_backoff": True,
-    "max_retry_delay": timedelta(minutes=5),
-}
 
 
 def load_sql(filename):
     return (SQL_DIRECTORY / filename).read_text(encoding="utf-8")
-
-
-def build_ingestion_key(task_instance, *, map_index=None):
-    parts = [
-        task_instance.dag_id,
-        task_instance.run_id,
-        task_instance.task_id,
-    ]
-    if map_index is not None:
-        parts.append(map_index)
-    parts.append(task_instance.try_number)
-    return ":".join(str(part) for part in parts)
-
-
-@contextmanager
-def market_data_connection():
-    from airflow.providers.postgres.hooks.postgres import PostgresHook
-
-    hook = PostgresHook(postgres_conn_id="market_data")
-    with closing(hook.get_conn()) as connection:
-        yield connection

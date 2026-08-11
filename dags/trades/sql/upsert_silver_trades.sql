@@ -6,7 +6,7 @@ INSERT INTO silver.trades (
     time,
     size,
     side,
-    ingestion_key
+    bronze_ingestion_id
 )
 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (source, product_id, trade_id) DO UPDATE
@@ -15,4 +15,4 @@ SET
     time = EXCLUDED.time,
     size = EXCLUDED.size,
     side = EXCLUDED.side,
-    ingestion_key = EXCLUDED.ingestion_key;
+    bronze_ingestion_id = EXCLUDED.bronze_ingestion_id;

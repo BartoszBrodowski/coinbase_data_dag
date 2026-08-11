@@ -67,7 +67,7 @@ def load_gold(silver_result):
 def test_gold_quality(gold_result):
     return {
         "ingestion_id": gold_result["ingestion_id"],
-        "rows_checked": validate_gold_quality(),
+        "rows_checked": validate_gold_quality(gold_result["ingestion_id"]),
     }
 
 

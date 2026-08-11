@@ -1,7 +1,7 @@
 import json
 import sys
 import unittest
-from datetime import timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -9,7 +9,10 @@ from pathlib import Path
 DAGS_DIRECTORY = Path(__file__).parents[2] / "dags"
 sys.path.insert(0, str(DAGS_DIRECTORY))
 
-from trades.silver_transform import parse_trades, transform_bronze_to_silver
+from trades.silver_transform import (
+    parse_trades,
+    transform_bronze_to_silver,
+)
 
 
 class _Cursor:
@@ -79,8 +82,11 @@ class TradeSilverTransformTest(unittest.TestCase):
 
     def test_commits_silver_before_advancing_the_watermark(self):
         bronze = (
-            "ingestion-1",
+            91,
+            "live:coinbase:BTC-USD",
             "BTC-USD",
+            "live",
+            None,
             "1068720621",
             "manual__2026-08-10",
             200,
@@ -91,10 +97,51 @@ class TradeSilverTransformTest(unittest.TestCase):
 
         rows_processed = transform_bronze_to_silver(connection, 91)
 
-        self.assertEqual(rows_processed, 1)
+        self.assertEqual(
+            rows_processed,
+            {"trades_processed": 1, "completed": False},
+        )
         self.assertTrue(connection.committed)
         self.assertEqual(connection.cursor_instance.batch[1][0][2], 1068720622)
+        self.assertEqual(connection.cursor_instance.batch[1][0][7], 91)
         executed_sql = [sql for sql, _ in connection.cursor_instance.executions]
-        self.assertIn("UPDATE control.trade_ingestions", executed_sql[1])
-        self.assertIn("INSERT INTO control.trade_watermarks", executed_sql[2])
+        self.assertIn("UPDATE bronze.coinbase_trades_raw", executed_sql[1])
+        self.assertIn("UPDATE control.trade_ingestions", executed_sql[2])
 
+    def test_catchup_filters_at_time_boundary_without_moving_live_watermark(self):
+        bronze = (
+            91,
+            "catchup:catchup-1",
+            "BTC-USD",
+            "catchup",
+            datetime(2026, 8, 10, tzinfo=timezone.utc),
+            "1068720621",
+            "manual__2026-08-11",
+            200,
+            json.dumps(
+                [
+                    {
+                        "trade_id": 2,
+                        "side": "sell",
+                        "size": "0.1",
+                        "price": "2",
+                        "time": "2026-08-10T00:00:01Z",
+                    },
+                    {
+                        "trade_id": 1,
+                        "side": "buy",
+                        "size": "0.1",
+                        "price": "1",
+                        "time": "2026-08-09T23:59:59Z",
+                    },
+                ]
+            ),
+        )
+        connection = _Connection(bronze)
+
+        result = transform_bronze_to_silver(connection, 91)
+
+        self.assertEqual(result, {"trades_processed": 1, "completed": True})
+        self.assertEqual(len(connection.cursor_instance.batch[1]), 1)
+        executed_sql = [sql for sql, _ in connection.cursor_instance.executions]
+        self.assertIn("UPDATE control.trade_ingestions", executed_sql[2])

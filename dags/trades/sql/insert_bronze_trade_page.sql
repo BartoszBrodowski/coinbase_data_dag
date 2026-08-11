@@ -1,5 +1,6 @@
 INSERT INTO bronze.coinbase_trades_raw (
     ingestion_key,
+    trade_ingestion_key,
     product_id,
     response_cb_before,
     response_cb_after,
@@ -14,6 +15,7 @@ INSERT INTO bronze.coinbase_trades_raw (
 )
 VALUES (
     %(ingestion_key)s,
+    %(trade_ingestion_key)s,
     %(product_id)s,
     %(response_cb_before)s,
     %(response_cb_after)s,

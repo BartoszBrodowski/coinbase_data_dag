@@ -224,7 +224,12 @@ services:
 
   airflow-init:
     <<: *airflow-common
-    command: version
+    command:
+      - /bin/bash
+      - -c
+      - |
+        airflow version
+        airflow pools set coinbase_trades_api 1 "Serialize Coinbase trades endpoint requests"
     environment:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: 'true'

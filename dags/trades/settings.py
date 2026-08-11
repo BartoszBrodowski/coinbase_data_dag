@@ -1,7 +1,10 @@
-"""Explicitly approved products for the initial trades ingestion release."""
+"""Initial configuration for the Coinbase trades ingestion release."""
 
 
 ACTIVE_PRODUCT_IDS = frozenset({"BTC-USD"})
+MAX_PAGES_PER_RUN = 3
+TASK_TIMEOUT_MINUTES = 1
+TRADES_API_POOL = "coinbase_trades_api"
 
 
 def require_active_product(product_id):

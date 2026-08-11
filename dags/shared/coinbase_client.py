@@ -22,6 +22,18 @@ _PRODUCT_ID_PATTERN = re.compile(r"^[A-Z0-9]+-[A-Z0-9]+$")
 class CoinbaseAPIError(RuntimeError):
     """An error response returned by Coinbase."""
 
+    def __init__(self, status_code: int, message: str):
+        self.status_code = status_code
+        super().__init__(f"Coinbase returned HTTP {status_code}: {message}")
+
+
+class CoinbaseRetryableAPIError(CoinbaseAPIError):
+    """A transient Coinbase response that may succeed on a later attempt."""
+
+
+class CoinbaseNonRetryableAPIError(CoinbaseAPIError):
+    """A deterministic Coinbase response that should fail immediately."""
+
 
 @dataclass(frozen=True)
 class CoinbaseResponse:
@@ -40,7 +52,12 @@ class CoinbaseResponse:
         except (json.JSONDecodeError, AttributeError):
             message = self.body
 
-        raise CoinbaseAPIError(f"Coinbase returned HTTP {self.status_code}: {message}")
+        error_type = (
+            CoinbaseRetryableAPIError
+            if self.status_code == 429 or 500 <= self.status_code < 600
+            else CoinbaseNonRetryableAPIError
+        )
+        raise error_type(self.status_code, message)
 
 
 def fetch_candles(

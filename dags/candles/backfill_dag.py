@@ -8,7 +8,7 @@ from airflow.sdk.exceptions import AirflowFailException
 from candles.bronze_ingest import ingest_one_interval
 from candles.gold_load import load_silver_to_gold, validate_gold_quality
 from candles.silver_transform import transform_bronze_to_silver
-from candles.utils import COINBASE_API_RETRY_ARGS, build_ingestion_key
+from shared.utils import COINBASE_API_RETRY_ARGS, build_ingestion_key
 from shared.coinbase_client import MAX_CANDLES_PER_REQUEST, SUPPORTED_GRANULARITIES
 
 
@@ -142,8 +142,8 @@ def load_backfill_gold(ingestion_id):
 
 
 @task
-def test_backfill_gold_quality():
-    return validate_gold_quality()
+def test_backfill_gold_quality(ingestion_id):
+    return validate_gold_quality(ingestion_id)
 
 
 @dag(
@@ -162,7 +162,7 @@ def create_coinbase_backfill_dag():
     gold_ingestion_ids = load_backfill_gold.expand(
         ingestion_id=silver_ingestion_ids
     )
-    gold_ingestion_ids >> test_backfill_gold_quality()
+    test_backfill_gold_quality.expand(ingestion_id=gold_ingestion_ids)
 
 
 dag = create_coinbase_backfill_dag()

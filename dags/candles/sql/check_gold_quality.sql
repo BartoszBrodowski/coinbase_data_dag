@@ -11,6 +11,19 @@ WITH duplicate_keys AS (
         granularity_seconds,
         candle_start
     HAVING COUNT(*) > 1
+), ingestion_candles AS (
+    SELECT
+        gold.candle_start,
+        gold.granularity_seconds,
+        gold.product_id,
+        gold.source
+    FROM gold.candles AS gold
+    JOIN silver.candles AS silver
+      ON silver.source = gold.source
+     AND silver.product_id = gold.product_id
+     AND silver.granularity_seconds = gold.granularity_seconds
+     AND silver.candle_start = gold.candle_start
+    WHERE silver.bronze_ingestion_id = %(ingestion_id)s
 ), sequenced_candles AS (
     SELECT
         candle_start,
@@ -19,7 +32,7 @@ WITH duplicate_keys AS (
             PARTITION BY source, product_id, granularity_seconds
             ORDER BY candle_start
         ) AS previous_candle_start
-    FROM gold.candles
+    FROM ingestion_candles
 )
 SELECT
     (SELECT COUNT(*) FROM silver.candles) AS silver_count,

@@ -4,6 +4,7 @@ import unittest
 from email.message import Message
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
@@ -11,7 +12,23 @@ from urllib.parse import parse_qs, urlsplit
 DAGS_DIRECTORY = Path(__file__).parents[2] / "dags"
 sys.path.insert(0, str(DAGS_DIRECTORY))
 
-from shared.coinbase_client import CoinbaseAPIError, fetch_candles, fetch_trades
+from shared.coinbase_client import (
+    CoinbaseNonRetryableAPIError,
+    CoinbaseResponse,
+    CoinbaseRetryableAPIError,
+    fetch_candles,
+    fetch_trades,
+)
+
+
+def fetch_error_response(status_code):
+    return CoinbaseResponse(
+        status_code=status_code,
+        body='{"message":"failure"}',
+        content_type="application/json",
+        headers={},
+        duration_ms=1,
+    )
 
 
 class _Response:
@@ -82,8 +99,23 @@ class CoinbaseClientTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.body, '{"message":"NotFound"}')
-        with self.assertRaisesRegex(CoinbaseAPIError, "HTTP 404: NotFound"):
+        with self.assertRaisesRegex(CoinbaseNonRetryableAPIError, "HTTP 404: NotFound"):
             response.raise_for_status()
+
+    def test_marks_rate_limit_and_server_errors_as_retryable(self):
+        for status_code in (429, 500, 503):
+            with self.subTest(status_code=status_code):
+                response = fetch_error_response(status_code)
+                with self.assertRaises(CoinbaseRetryableAPIError) as raised:
+                    response.raise_for_status()
+                self.assertEqual(raised.exception.status_code, status_code)
+
+    def test_marks_other_http_failures_as_non_retryable(self):
+        for status_code in (400, 401, 404):
+            with self.subTest(status_code=status_code):
+                response = fetch_error_response(status_code)
+                with self.assertRaises(CoinbaseNonRetryableAPIError):
+                    response.raise_for_status()
 
     def test_rejects_implicit_timezone(self):
         with self.assertRaisesRegex(ValueError, "timezone-aware"):

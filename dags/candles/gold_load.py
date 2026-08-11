@@ -14,8 +14,8 @@ def upsert_gold(cursor, ingestion_id):
     return cursor.rowcount
 
 
-def check_gold_quality(cursor):
-    cursor.execute(GOLD_QUALITY_SQL)
+def check_gold_quality(cursor, ingestion_id):
+    cursor.execute(GOLD_QUALITY_SQL, {"ingestion_id": ingestion_id})
     (
         silver_count,
         gold_count,
@@ -56,11 +56,15 @@ def load_silver_to_gold(ingestion_id):
     return rows_processed
 
 
-def validate_gold_quality():
+def validate_gold_quality(ingestion_id):
     with market_data_connection() as connection:
         with connection:
             with connection.cursor() as cursor:
-                rows_checked = check_gold_quality(cursor)
+                rows_checked = check_gold_quality(cursor, ingestion_id)
 
-    logger.info("gold_quality_passed record_count=%s", rows_checked)
+    logger.info(
+        "gold_quality_passed ingestion_id=%s record_count=%s",
+        ingestion_id,
+        rows_checked,
+    )
     return rows_checked

@@ -63,6 +63,7 @@ class TradeBronzeIngestTest(unittest.TestCase):
         ingestion_id = save_trade_page(
             connection,
             ingestion_key="trade-page-1",
+            trade_ingestion_key="live:coinbase:BTC-USD",
             product_id="BTC-USD",
             response=response,
         )
@@ -70,6 +71,10 @@ class TradeBronzeIngestTest(unittest.TestCase):
         _, parameters = connection.cursor_instance.executions[0]
         self.assertEqual(ingestion_id, 91)
         self.assertTrue(connection.committed)
+        self.assertEqual(
+            parameters["trade_ingestion_key"],
+            "live:coinbase:BTC-USD",
+        )
         self.assertEqual(parameters["response_cb_before"], "1068720622")
         self.assertEqual(parameters["response_cb_after"], "1068720621")
         self.assertEqual(json.loads(parameters["response_headers"]), response.headers)
@@ -81,6 +86,7 @@ class TradeBronzeIngestTest(unittest.TestCase):
         ingestion_id = save_trade_page(
             connection,
             ingestion_key="trade-page-1",
+            trade_ingestion_key="live:coinbase:BTC-USD",
             product_id="BTC-USD",
             response=response,
         )

@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from trades.ingestion_state import UPDATE_INGESTION_PROGRESS_SQL
+
 
 logger = logging.getLogger(__name__)
 SOURCE = "coinbase"
@@ -17,11 +19,8 @@ SELECT_TRADE_PAGE_FOR_SILVER_SQL = (
 UPSERT_TRADES_SQL = (SQL_DIRECTORY / "upsert_silver_trades.sql").read_text(
     encoding="utf-8"
 )
-MARK_TRADE_INGESTION_COMMITTED_SQL = (
-    SQL_DIRECTORY / "mark_trade_ingestion_committed.sql"
-).read_text(encoding="utf-8")
-UPSERT_TRADE_WATERMARK_SQL = (
-    SQL_DIRECTORY / "upsert_trade_watermark.sql"
+MARK_BRONZE_TRADE_PAGE_COMMITTED_SQL = (
+    SQL_DIRECTORY / "mark_bronze_trade_page_committed.sql"
 ).read_text(encoding="utf-8")
 
 
@@ -74,7 +73,7 @@ def parse_trades(response_body):
 
 
 def transform_bronze_to_silver(connection, ingestion_id):
-    """Commit Silver rows and the corresponding watermark atomically."""
+    """Commit a page and advance its live or catch-up process atomically."""
 
     with connection:
         with connection.cursor() as cursor:
@@ -87,8 +86,11 @@ def transform_bronze_to_silver(connection, ingestion_id):
                 raise ValueError(f"Bronze trade ingestion {ingestion_id} does not exist")
 
             (
-                ingestion_key,
+                bronze_ingestion_id,
+                trade_ingestion_key,
                 product_id,
+                mode,
+                oldest_time,
                 response_cb_after,
                 pipeline_run_id,
                 http_status,
@@ -97,7 +99,19 @@ def transform_bronze_to_silver(connection, ingestion_id):
             if not 200 <= http_status < 300:
                 raise ValueError(f"Bronze trade ingestion {ingestion_id} has HTTP {http_status}")
 
-            trades = parse_trades(response_body)
+            page_trades = parse_trades(response_body)
+            reached_time_boundary = bool(
+                oldest_time is not None
+                and (
+                    not page_trades
+                    or min(trade.time for trade in page_trades) <= oldest_time
+                )
+            )
+            trades = [
+                trade
+                for trade in page_trades
+                if oldest_time is None or trade.time >= oldest_time
+            ]
             rows = [
                 (
                     SOURCE,
@@ -107,7 +121,7 @@ def transform_bronze_to_silver(connection, ingestion_id):
                     trade.time,
                     trade.size,
                     trade.side,
-                    ingestion_key,
+                    bronze_ingestion_id,
                 )
                 for trade in trades
             ]
@@ -115,20 +129,24 @@ def transform_bronze_to_silver(connection, ingestion_id):
                 cursor.executemany(UPSERT_TRADES_SQL, rows)
 
             cursor.execute(
-                MARK_TRADE_INGESTION_COMMITTED_SQL,
-                {"ingestion_key": ingestion_key},
+                MARK_BRONZE_TRADE_PAGE_COMMITTED_SQL,
+                {"ingestion_id": bronze_ingestion_id},
+            )
+            completed = mode == "catchup" and (
+                reached_time_boundary or response_cb_after is None
             )
             cursor.execute(
-                UPSERT_TRADE_WATERMARK_SQL,
+                UPDATE_INGESTION_PROGRESS_SQL,
                 {
-                    "source": SOURCE,
-                    "product_id": product_id,
+                    "trade_ingestion_key": trade_ingestion_key,
                     "resume_after_cursor": response_cb_after,
                     "highest_trade_id": max(
                         (trade.trade_id for trade in trades), default=None
                     ),
+                    "completed": completed,
+                    "trades_committed": len(trades),
                     "pipeline_run_id": pipeline_run_id,
-                    "ingestion_key": ingestion_key,
+                    "bronze_ingestion_id": bronze_ingestion_id,
                 },
             )
 
@@ -137,7 +155,10 @@ def transform_bronze_to_silver(connection, ingestion_id):
         ingestion_id,
         len(trades),
     )
-    return len(trades)
+    return {
+        "trades_processed": len(trades),
+        "completed": completed,
+    }
 
 
 def _parse_utc_time(value):

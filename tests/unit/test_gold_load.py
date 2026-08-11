@@ -26,39 +26,39 @@ class GoldLoadTest(unittest.TestCase):
         cursor = Mock()
         cursor.fetchone.return_value = (6, 6, 0, 0, 0, 0)
 
-        self.assertEqual(check_gold_quality(cursor), 6)
+        self.assertEqual(check_gold_quality(cursor, ingestion_id=42), 6)
 
     def test_quality_check_rejects_count_mismatch(self):
         cursor = Mock()
         cursor.fetchone.return_value = (6, 5, 0, 0, 0, 0)
 
         with self.assertRaisesRegex(ValueError, "Gold contains 5 rows"):
-            check_gold_quality(cursor)
+            check_gold_quality(cursor, ingestion_id=42)
 
     def test_quality_check_rejects_duplicate_keys(self):
         cursor = Mock()
         cursor.fetchone.return_value = (6, 6, 1, 0, 0, 0)
 
         with self.assertRaisesRegex(ValueError, "duplicate candle keys"):
-            check_gold_quality(cursor)
+            check_gold_quality(cursor, ingestion_id=42)
 
     def test_quality_check_rejects_null_values(self):
         cursor = Mock()
         cursor.fetchone.return_value = (6, 6, 0, 2, 0, 0)
 
         with self.assertRaisesRegex(ValueError, "2 rows with null values"):
-            check_gold_quality(cursor)
+            check_gold_quality(cursor, ingestion_id=42)
 
     def test_quality_check_rejects_invalid_ohlc_values(self):
         cursor = Mock()
         cursor.fetchone.return_value = (6, 6, 0, 0, 3, 0)
 
         with self.assertRaisesRegex(ValueError, "3 rows with invalid OHLC values"):
-            check_gold_quality(cursor)
+            check_gold_quality(cursor, ingestion_id=42)
 
     def test_quality_check_rejects_time_gaps(self):
         cursor = Mock()
         cursor.fetchone.return_value = (6, 6, 0, 0, 0, 1)
 
         with self.assertRaisesRegex(ValueError, "1 time gaps between candles"):
-            check_gold_quality(cursor)
+            check_gold_quality(cursor, ingestion_id=42)
