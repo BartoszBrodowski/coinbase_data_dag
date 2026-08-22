@@ -36,10 +36,6 @@ class AirflowDagTest(unittest.TestCase):
         )
         self.assertEqual(
             dag.get_task("load_gold").downstream_task_ids,
-            {"test_gold_quality"},
-        )
-        self.assertEqual(
-            dag.get_task("test_gold_quality").downstream_task_ids,
             set(),
         )
 

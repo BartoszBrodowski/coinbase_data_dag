@@ -84,6 +84,7 @@ class TradeSilverTransformTest(unittest.TestCase):
         bronze = (
             91,
             "live:coinbase:BTC-USD",
+            "test-exchange",
             "BTC-USD",
             "live",
             None,
@@ -103,6 +104,7 @@ class TradeSilverTransformTest(unittest.TestCase):
         )
         self.assertTrue(connection.committed)
         self.assertEqual(connection.cursor_instance.batch[1][0][2], 1068720622)
+        self.assertEqual(connection.cursor_instance.batch[1][0][0], "test-exchange")
         self.assertEqual(connection.cursor_instance.batch[1][0][7], 91)
         executed_sql = [sql for sql, _ in connection.cursor_instance.executions]
         self.assertIn("UPDATE bronze.coinbase_trades_raw", executed_sql[1])
@@ -112,6 +114,7 @@ class TradeSilverTransformTest(unittest.TestCase):
         bronze = (
             91,
             "catchup:catchup-1",
+            "test-exchange",
             "BTC-USD",
             "catchup",
             datetime(2026, 8, 10, tzinfo=timezone.utc),

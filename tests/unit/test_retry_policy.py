@@ -8,11 +8,11 @@ from airflow.sdk.exceptions import AirflowFailException
 DAGS_DIRECTORY = Path(__file__).parents[2] / "dags"
 sys.path.insert(0, str(DAGS_DIRECTORY))
 
-from shared.coinbase_client import (
+from dags.shared.coinbase_client import CoinbaseAPIError
+from dags.shared.coinbase_client import (
     CoinbaseNonRetryableAPIError,
-    CoinbaseRetryableAPIError,
 )
-from shared.utils import fail_without_retry_on
+from dags.shared.utils import fail_without_retry_on
 
 
 class RetryPolicyTest(unittest.TestCase):
@@ -27,9 +27,9 @@ class RetryPolicyTest(unittest.TestCase):
                 raise CoinbaseNonRetryableAPIError(404, "NotFound")
 
     def test_retryable_http_errors_escape_for_airflow_retry(self):
-        with self.assertRaises(CoinbaseRetryableAPIError):
+        with self.assertRaises(CoinbaseAPIError):
             with fail_without_retry_on(CoinbaseNonRetryableAPIError, ValueError):
-                raise CoinbaseRetryableAPIError(503, "Unavailable")
+                raise CoinbaseAPIError(503, "Unavailable")
 
     def test_timeouts_escape_for_airflow_retry(self):
         with self.assertRaises(TimeoutError):

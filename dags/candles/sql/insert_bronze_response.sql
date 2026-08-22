@@ -22,5 +22,7 @@ VALUES (
     %(response_headers)s::jsonb,
     %(response_body)s
 )
+-- Prevents duplicate ingestion_key entries from being
+-- inserted into the table (in case of hiccups or retries)
 ON CONFLICT (ingestion_key) DO NOTHING
 RETURNING ingestion_id

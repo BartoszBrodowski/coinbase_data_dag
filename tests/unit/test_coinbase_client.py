@@ -15,7 +15,7 @@ sys.path.insert(0, str(DAGS_DIRECTORY))
 from shared.coinbase_client import (
     CoinbaseNonRetryableAPIError,
     CoinbaseResponse,
-    CoinbaseRetryableAPIError,
+    CoinbaseAPIError,
     fetch_candles,
     fetch_trades,
 )
@@ -106,7 +106,7 @@ class CoinbaseClientTest(unittest.TestCase):
         for status_code in (429, 500, 503):
             with self.subTest(status_code=status_code):
                 response = fetch_error_response(status_code)
-                with self.assertRaises(CoinbaseRetryableAPIError) as raised:
+                with self.assertRaises(CoinbaseAPIError) as raised:
                     response.raise_for_status()
                 self.assertEqual(raised.exception.status_code, status_code)
 

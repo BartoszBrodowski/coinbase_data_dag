@@ -1,7 +1,8 @@
 import json
 import logging
 
-from candles.utils import load_sql, market_data_connection
+from candles.utils import load_sql
+from shared.utils import market_data_connection
 from shared.coinbase_client import fetch_candles
 
 

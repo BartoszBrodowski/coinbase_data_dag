@@ -225,7 +225,7 @@ services:
   airflow-init:
     <<: *airflow-common
     command:
-      - /bin/bash
+      - bash
       - -c
       - |
         airflow version

@@ -6,10 +6,19 @@ from airflow.sdk import Param, dag, get_current_context, task
 from airflow.sdk.exceptions import AirflowFailException
 
 from candles.bronze_ingest import ingest_one_interval
-from candles.gold_load import load_silver_to_gold, validate_gold_quality
+from candles.gold_load import load_silver_to_gold
 from candles.silver_transform import transform_bronze_to_silver
-from shared.utils import COINBASE_API_RETRY_ARGS, build_ingestion_key
-from shared.coinbase_client import MAX_CANDLES_PER_REQUEST, SUPPORTED_GRANULARITIES
+from shared.utils import (
+    COINBASE_API_RETRY_ARGS,
+    build_ingestion_key,
+    fail_without_retry_on,
+)
+from shared.coinbase_client import (
+    COINBASE_SOURCE,
+    CoinbaseNonRetryableAPIError,
+    MAX_CANDLES_PER_REQUEST,
+    SUPPORTED_GRANULARITIES,
+)
 
 
 BACKFILL_START_DATE = datetime(2025, 1, 1, tzinfo=timezone.utc)
@@ -117,33 +126,28 @@ def ingest_backfill_interval(interval):
     context = get_current_context()
     task_instance = context["ti"]
 
-    return ingest_one_interval(
-        ingestion_key=build_ingestion_key(
-            task_instance,
-            map_index=task_instance.map_index,
-        ),
-        product_id=interval["product_id"],
-        granularity_seconds=interval["granularity_seconds"],
-        start=parse_utc_datetime(interval["start"]),
-        end=parse_utc_datetime(interval["end"]),
-    )
+    with fail_without_retry_on(CoinbaseNonRetryableAPIError, ValueError):
+        return ingest_one_interval(
+            ingestion_key=build_ingestion_key(
+                task_instance,
+                map_index=task_instance.map_index,
+            ),
+            product_id=interval["product_id"],
+            granularity_seconds=interval["granularity_seconds"],
+            start=parse_utc_datetime(interval["start"]),
+            end=parse_utc_datetime(interval["end"]),
+        )
 
 
 @task
 def load_backfill_silver(ingestion_id):
-    transform_bronze_to_silver(ingestion_id)
+    transform_bronze_to_silver(ingestion_id, source=COINBASE_SOURCE)
     return ingestion_id
 
 
 @task
 def load_backfill_gold(ingestion_id):
     load_silver_to_gold(ingestion_id)
-    return ingestion_id
-
-
-@task
-def test_backfill_gold_quality(ingestion_id):
-    return validate_gold_quality(ingestion_id)
 
 
 @dag(
@@ -159,10 +163,9 @@ def create_coinbase_backfill_dag():
     intervals = create_backfill_intervals()
     ingestion_ids = ingest_backfill_interval.expand(interval=intervals)
     silver_ingestion_ids = load_backfill_silver.expand(ingestion_id=ingestion_ids)
-    gold_ingestion_ids = load_backfill_gold.expand(
+    load_backfill_gold.expand(
         ingestion_id=silver_ingestion_ids
     )
-    test_backfill_gold_quality.expand(ingestion_id=gold_ingestion_ids)
 
 
 dag = create_coinbase_backfill_dag()

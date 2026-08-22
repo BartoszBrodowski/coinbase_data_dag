@@ -66,7 +66,7 @@ class BackfillDagTest(unittest.TestCase):
         )
         self.assertEqual(
             dag.get_task("load_backfill_gold").downstream_task_ids,
-            {"test_backfill_gold_quality"},
+            set(),
         )
 
     def test_only_api_tasks_are_retried_and_throttled(self):

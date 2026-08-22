@@ -8,7 +8,6 @@ from pathlib import Path
 from trades.settings import ACTIVE_PRODUCT_IDS
 
 
-SOURCE = "coinbase"
 SQL_DIRECTORY = Path(__file__).with_name("sql")
 UPDATE_INGESTION_PROGRESS_SQL = (
     SQL_DIRECTORY / "update_trade_ingestion_progress.sql"
@@ -18,11 +17,11 @@ PAUSE_INGESTION_SQL = (SQL_DIRECTORY / "pause_trade_ingestion.sql").read_text(
 )
 
 
-def live_ingestion_key(product_id):
-    return f"live:{SOURCE}:{product_id}"
+def live_ingestion_key(source, product_id):
+    return f"live:{source}:{product_id}"
 
 
-def validate_catchup_request(product_id, oldest_time, after_cursor, max_pages):
+def validate_catchup_request(source, product_id, oldest_time, after_cursor, max_pages):
     """Return a normalized, bounded request for the shared state model."""
 
     if product_id not in ACTIVE_PRODUCT_IDS:
@@ -49,7 +48,7 @@ def validate_catchup_request(product_id, oldest_time, after_cursor, max_pages):
         raise ValueError("max_pages must be between 1 and 20")
 
     identity = {
-        "source": SOURCE,
+        "source": source,
         "product_id": product_id,
         "mode": "catchup",
         "oldest_time": (
@@ -105,7 +104,11 @@ def start_or_resume_ingestion(connection, request, pipeline_run_id):
                     FROM control.trade_ingestions
                     WHERE ingestion_key = %(live_ingestion_key)s
                     """,
-                    {"live_ingestion_key": live_ingestion_key(request["product_id"])},
+                    {
+                        "live_ingestion_key": live_ingestion_key(
+                            request["source"], request["product_id"]
+                        )
+                    },
                 )
                 live_state = cursor.fetchone()
                 resume_after_cursor = live_state[0] if live_state else None

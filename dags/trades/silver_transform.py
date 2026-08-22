@@ -11,7 +11,6 @@ from trades.ingestion_state import UPDATE_INGESTION_PROGRESS_SQL
 
 
 logger = logging.getLogger(__name__)
-SOURCE = "coinbase"
 SQL_DIRECTORY = Path(__file__).with_name("sql")
 SELECT_TRADE_PAGE_FOR_SILVER_SQL = (
     SQL_DIRECTORY / "select_bronze_trade_page_for_silver.sql"
@@ -88,6 +87,7 @@ def transform_bronze_to_silver(connection, ingestion_id):
             (
                 bronze_ingestion_id,
                 trade_ingestion_key,
+                source,
                 product_id,
                 mode,
                 oldest_time,
@@ -114,7 +114,7 @@ def transform_bronze_to_silver(connection, ingestion_id):
             ]
             rows = [
                 (
-                    SOURCE,
+                    source,
                     product_id,
                     trade.trade_id,
                     trade.price,

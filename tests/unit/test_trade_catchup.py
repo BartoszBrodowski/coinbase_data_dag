@@ -50,16 +50,18 @@ class _Connection:
 class TradeCatchupRequestTest(unittest.TestCase):
     def test_requires_an_explicit_time_or_cursor_boundary(self):
         with self.assertRaisesRegex(ValueError, "requires oldest_time or after_cursor"):
-            validate_catchup_request("BTC-USD", None, None, 3)
+            validate_catchup_request("test-exchange", "BTC-USD", None, None, 3)
 
     def test_normalizes_time_and_builds_a_stable_key(self):
         first = validate_catchup_request(
+            "test-exchange",
             "BTC-USD",
             "2026-08-01T02:00:00+02:00",
             None,
             3,
         )
         second = validate_catchup_request(
+            "test-exchange",
             "BTC-USD",
             "2026-08-01T00:00:00Z",
             None,
@@ -72,6 +74,7 @@ class TradeCatchupRequestTest(unittest.TestCase):
     def test_rejects_an_unbounded_page_count(self):
         with self.assertRaisesRegex(ValueError, "between 1 and 20"):
             validate_catchup_request(
+                "test-exchange",
                 "BTC-USD",
                 datetime(2026, 8, 1, tzinfo=timezone.utc).isoformat(),
                 None,
@@ -80,6 +83,7 @@ class TradeCatchupRequestTest(unittest.TestCase):
 
     def test_accepts_an_explicit_cursor_without_a_time_boundary(self):
         request = validate_catchup_request(
+            "test-exchange",
             "BTC-USD",
             None,
             " 1068720621 ",
@@ -93,8 +97,8 @@ class TradeCatchupRequestTest(unittest.TestCase):
 class TradeCatchupStateTest(unittest.TestCase):
     def test_live_mode_uses_the_same_process_state(self):
         request = {
-            "ingestion_key": live_ingestion_key("BTC-USD"),
-            "source": "coinbase",
+            "ingestion_key": live_ingestion_key("test-exchange", "BTC-USD"),
+            "source": "test-exchange",
             "product_id": "BTC-USD",
             "mode": "live",
             "oldest_time": None,
@@ -110,6 +114,7 @@ class TradeCatchupStateTest(unittest.TestCase):
 
     def test_new_time_bounded_job_starts_from_live_watermark(self):
         request = validate_catchup_request(
+            "test-exchange",
             "BTC-USD",
             "2026-08-01T00:00:00Z",
             None,
@@ -127,6 +132,7 @@ class TradeCatchupStateTest(unittest.TestCase):
 
     def test_existing_job_resumes_from_its_committed_cursor(self):
         request = validate_catchup_request(
+            "test-exchange",
             "BTC-USD",
             "2026-08-01T00:00:00Z",
             None,

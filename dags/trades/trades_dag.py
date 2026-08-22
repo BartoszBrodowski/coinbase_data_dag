@@ -8,7 +8,7 @@ from shared.utils import (
     fail_without_retry_on,
     market_data_connection,
 )
-from shared.coinbase_client import CoinbaseNonRetryableAPIError
+from shared.coinbase_client import COINBASE_SOURCE, CoinbaseNonRetryableAPIError
 from trades.bronze_ingest import ingest_trade_page
 from trades.ingestion_state import (
     live_ingestion_key,
@@ -23,7 +23,6 @@ from trades.settings import MAX_PAGES_PER_RUN, TASK_TIMEOUT_MINUTES, TRADES_API_
 DAG_START_DATE = datetime(2026, 8, 10, tzinfo=timezone.utc)
 DAG_SCHEDULE = CronDataIntervalTimetable("*/15 * * * *", timezone="UTC")
 PRODUCT_ID = "BTC-USD"
-SOURCE = "coinbase"
 # One DAG deliberately serves scheduled live ingestion and manual catch-up: both
 # use the same Bronze-to-Silver path and durable cursor model.  Splitting them
 # would duplicate orchestration without changing the data-processing behaviour.
@@ -78,9 +77,9 @@ def build_ingestion_request(params, run_type):
     if mode == "live":
         return {
             "mode": "live",
-            "source": SOURCE,
+            "source": COINBASE_SOURCE,
             "product_id": PRODUCT_ID,
-            "ingestion_key": live_ingestion_key(PRODUCT_ID),
+            "ingestion_key": live_ingestion_key(COINBASE_SOURCE, PRODUCT_ID),
             "oldest_time": None,
             "initial_after_cursor": None,
             "max_pages": MAX_PAGES_PER_RUN,
@@ -95,6 +94,7 @@ def build_ingestion_request(params, run_type):
     return {
         "mode": "catchup",
         **validate_catchup_request(
+            source=COINBASE_SOURCE,
             product_id=PRODUCT_ID,
             oldest_time=params.get("oldest_time"),
             after_cursor=params.get("after_cursor"),

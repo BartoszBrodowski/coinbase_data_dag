@@ -1,6 +1,7 @@
 SELECT
     pages.ingestion_id,
     pages.trade_ingestion_key,
+    processes.source,
     pages.product_id,
     processes.mode,
     processes.oldest_time,
