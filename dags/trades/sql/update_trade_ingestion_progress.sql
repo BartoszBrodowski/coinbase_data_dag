@@ -1,7 +1,11 @@
 UPDATE control.trade_ingestions
 SET
+    resume_before_cursor = COALESCE(
+        %(response_cb_before)s,
+        resume_before_cursor
+    ),
     resume_after_cursor = COALESCE(
-        %(resume_after_cursor)s,
+        %(response_cb_after)s,
         resume_after_cursor
     ),
     highest_trade_id = CASE
@@ -22,4 +26,4 @@ SET
         WHEN %(completed)s THEN CURRENT_TIMESTAMP
         ELSE NULL
     END
-WHERE ingestion_key = %(trade_ingestion_key)s;
+WHERE process_key = %(process_key)s;

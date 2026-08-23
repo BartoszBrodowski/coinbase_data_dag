@@ -56,12 +56,6 @@ class CoinbaseResponse:
         else:
             message = self.body
 
-        try:
-            message = json.loads(self.body).get("message", self.body)
-        except (json.JSONDecodeError, AttributeError):
-            message = self.body
-
-
         if self.status_code == 429 or 500 <= self.status_code < 600:
             raise CoinbaseAPIError(self.status_code, message)
 

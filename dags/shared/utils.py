@@ -1,5 +1,6 @@
 from contextlib import closing, contextmanager
 from datetime import timedelta
+from pathlib import Path
 
 from airflow.sdk.exceptions import AirflowFailException
 
@@ -10,7 +11,15 @@ COINBASE_API_RETRY_ARGS = {
     "retry_exponential_backoff": True,
     "max_retry_delay": timedelta(minutes=5),
 }
-def build_ingestion_key(task_instance, *, map_index=None):
+
+
+def load_sql(sql_directory: Path, filename: str) -> str:
+    """Read a UTF-8 SQL file from a domain-specific SQL directory."""
+
+    return (sql_directory / filename).read_text(encoding="utf-8")
+
+
+def build_bronze_request_key(task_instance, *, map_index=None):
     parts = [
         task_instance.dag_id,
         task_instance.run_id,

@@ -4,20 +4,25 @@ from airflow.sdk import Param, dag, get_current_context, task
 from airflow.timetables.interval import CronDataIntervalTimetable
 from shared.utils import (
     COINBASE_API_RETRY_ARGS,
-    build_ingestion_key,
+    build_bronze_request_key,
     fail_without_retry_on,
     market_data_connection,
 )
 from shared.coinbase_client import COINBASE_SOURCE, CoinbaseNonRetryableAPIError
 from trades.bronze_ingest import ingest_trade_page
 from trades.ingestion_state import (
-    live_ingestion_key,
+    live_process_key,
     pause_ingestion,
     start_or_resume_ingestion,
     validate_catchup_request,
 )
 from trades.silver_transform import transform_bronze_to_silver
-from trades.settings import MAX_PAGES_PER_RUN, TASK_TIMEOUT_MINUTES, TRADES_API_POOL
+from trades.settings import (
+    MAX_CATCHUP_PAGES_PER_RUN,
+    MAX_LIVE_PAGES_PER_RUN,
+    TASK_TIMEOUT_MINUTES,
+    TRADES_API_POOL,
+)
 
 
 DAG_START_DATE = datetime(2026, 8, 10, tzinfo=timezone.utc)
@@ -60,10 +65,10 @@ TRADES_PARAMS = {
         description="Used only when mode is catchup; ignored in live mode.",
     ),
     "max_pages": Param(
-        MAX_PAGES_PER_RUN,
+        MAX_LIVE_PAGES_PER_RUN,
         type="integer",
         minimum=1,
-        maximum=20,
+        maximum=MAX_CATCHUP_PAGES_PER_RUN,
         title="Maximum catch-up pages in this run",
         description="Used only when mode is catchup; live uses its configured limit.",
     ),
@@ -79,10 +84,12 @@ def build_ingestion_request(params, run_type):
             "mode": "live",
             "source": COINBASE_SOURCE,
             "product_id": PRODUCT_ID,
-            "ingestion_key": live_ingestion_key(COINBASE_SOURCE, PRODUCT_ID),
+            "process_key": live_process_key(COINBASE_SOURCE, PRODUCT_ID),
             "oldest_time": None,
+            "cursor_direction": "before",
+            "initial_before_cursor": None,
             "initial_after_cursor": None,
-            "max_pages": MAX_PAGES_PER_RUN,
+            "max_pages": MAX_LIVE_PAGES_PER_RUN,
         }
     if mode != "catchup":
         raise ValueError("trade ingestion mode must be live or catchup")
@@ -132,43 +139,47 @@ def _ingest_bronze_pages(request, context):
     pipeline_run_id = context["dag_run"].run_id
 
     with market_data_connection() as connection:
-        after, status = start_or_resume_ingestion(
+        cursor, status = start_or_resume_ingestion(
             connection,
             request,
             pipeline_run_id,
         )
-        if status == "COMPLETED":
-            return {**request, "ingestion_ids": [], "already_completed": True}
 
-        ingestion_ids = []
+    if status == "COMPLETED":
+        return {**request, "ingestion_ids": [], "already_completed": True}
 
-        for page_index in range(request["max_pages"]):
-            ingestion_id = ingest_trade_page(
-                connection,
-                ingestion_key=build_ingestion_key(task_instance, map_index=page_index),
-                trade_ingestion_key=request["ingestion_key"],
-                product_id=request["product_id"],
-                after=after,
-                pipeline_run_id=pipeline_run_id,
-                pipeline_task_id=task_instance.task_id,
-                attempt_number=task_instance.try_number,
-            )
-            ingestion_ids.append(ingestion_id)
+    ingestion_ids = []
+    cursor_direction = request.get(
+        "cursor_direction",
+        "after" if request["mode"] == "catchup" else "before",
+    )
 
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT response_cb_after
-                    FROM bronze.coinbase_trades_raw
-                    WHERE ingestion_id = %(ingestion_id)s
-                    """,
-                    {"ingestion_id": ingestion_id},
-                )
-                next_cursor = cursor.fetchone()[0]
+    for page_index in range(request["max_pages"]):
+        bronze_request_key = build_bronze_request_key(
+            task_instance,
+            map_index=page_index,
+        )
+        page = ingest_trade_page(
+            bronze_request_key=bronze_request_key,
+            process_key=request["process_key"],
+            product_id=request["product_id"],
+            before=cursor if cursor_direction == "before" else None,
+            after=cursor if cursor_direction == "after" else None,
+            pipeline_run_id=pipeline_run_id,
+            pipeline_task_id=task_instance.task_id,
+            attempt_number=task_instance.try_number,
+        )
+        ingestion_ids.append(page["ingestion_id"])
 
-            if next_cursor is None or next_cursor == after:
-                break
-            after = next_cursor
+        next_cursor = page[
+            "response_cb_before"
+            if cursor_direction == "before"
+            else "response_cb_after"
+        ]
+
+        if next_cursor is None or next_cursor == cursor:
+            break
+        cursor = next_cursor
 
     return {**request, "ingestion_ids": ingestion_ids, "already_completed": False}
 
@@ -199,7 +210,7 @@ def _load_silver_pages(batch):
                 break
 
         if batch["mode"] == "catchup":
-            pause_ingestion(connection, batch["ingestion_key"])
+            pause_ingestion(connection, batch["process_key"])
 
     result = {
         "pages_processed": pages_processed,

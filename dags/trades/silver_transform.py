@@ -7,20 +7,19 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from shared.utils import load_sql
 from trades.ingestion_state import UPDATE_INGESTION_PROGRESS_SQL
 
 
 logger = logging.getLogger(__name__)
 SQL_DIRECTORY = Path(__file__).with_name("sql")
-SELECT_TRADE_PAGE_FOR_SILVER_SQL = (
-    SQL_DIRECTORY / "select_bronze_trade_page_for_silver.sql"
-).read_text(encoding="utf-8")
-UPSERT_TRADES_SQL = (SQL_DIRECTORY / "upsert_silver_trades.sql").read_text(
-    encoding="utf-8"
+SELECT_TRADE_PAGE_FOR_SILVER_SQL = load_sql(
+    SQL_DIRECTORY, "select_bronze_trade_page_for_silver.sql"
 )
-MARK_BRONZE_TRADE_PAGE_COMMITTED_SQL = (
-    SQL_DIRECTORY / "mark_bronze_trade_page_committed.sql"
-).read_text(encoding="utf-8")
+UPSERT_TRADES_SQL = load_sql(SQL_DIRECTORY, "upsert_silver_trades.sql")
+MARK_BRONZE_TRADE_PAGE_COMMITTED_SQL = load_sql(
+    SQL_DIRECTORY, "mark_bronze_trade_page_committed.sql"
+)
 
 
 @dataclass(frozen=True)
@@ -55,7 +54,7 @@ def parse_trades(response_body):
 
         if isinstance(trade_id, bool) or not isinstance(trade_id, int) or trade_id <= 0:
             raise ValueError(f"trade {index} has an invalid trade_id")
-        if side not in {"buy", "sell"}:
+        if not isinstance(side, str) or side not in {"buy", "sell"}:
             raise ValueError(f"trade {index} has an invalid maker side")
         if not price.is_finite() or price <= 0:
             raise ValueError(f"trade {index} has an invalid price")
@@ -86,11 +85,12 @@ def transform_bronze_to_silver(connection, ingestion_id):
 
             (
                 bronze_ingestion_id,
-                trade_ingestion_key,
+                process_key,
                 source,
                 product_id,
                 mode,
                 oldest_time,
+                response_cb_before,
                 response_cb_after,
                 pipeline_run_id,
                 http_status,
@@ -138,8 +138,9 @@ def transform_bronze_to_silver(connection, ingestion_id):
             cursor.execute(
                 UPDATE_INGESTION_PROGRESS_SQL,
                 {
-                    "trade_ingestion_key": trade_ingestion_key,
-                    "resume_after_cursor": response_cb_after,
+                    "process_key": process_key,
+                    "response_cb_before": response_cb_before,
+                    "response_cb_after": response_cb_after,
                     "highest_trade_id": max(
                         (trade.trade_id for trade in trades), default=None
                     ),

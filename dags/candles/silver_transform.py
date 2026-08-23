@@ -3,15 +3,18 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
-from candles.utils import load_sql
-from shared.utils import market_data_connection
+from shared.utils import load_sql, market_data_connection
 
 
 logger = logging.getLogger(__name__)
+SQL_DIRECTORY = Path(__file__).with_name("sql")
 
-SELECT_BRONZE_FOR_SILVER_SQL = load_sql("select_bronze_for_silver.sql")
-UPSERT_SILVER_CANDLES_SQL = load_sql("upsert_silver_candles.sql")
+SELECT_BRONZE_FOR_SILVER_SQL = load_sql(
+    SQL_DIRECTORY, "select_bronze_for_silver.sql"
+)
+UPSERT_SILVER_CANDLES_SQL = load_sql(SQL_DIRECTORY, "upsert_silver_candles.sql")
 
 
 @dataclass(frozen=True)

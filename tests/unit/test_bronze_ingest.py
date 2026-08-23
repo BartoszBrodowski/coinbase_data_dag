@@ -47,6 +47,22 @@ class _Connection:
 
 
 class BronzeIngestTest(unittest.TestCase):
+    def test_rejects_products_not_enabled_for_candle_ingestion(self):
+        start = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 1, 1, 1, tzinfo=timezone.utc)
+        response = CoinbaseResponse(200, "[]", "application/json", {}, 10)
+
+        with self.assertRaisesRegex(ValueError, "not enabled for ETH-USD"):
+            save_bronze_response(
+                _Connection(),
+                bronze_request_key="unsupported-product",
+                product_id="ETH-USD",
+                granularity_seconds=3600,
+                start=start,
+                end=end,
+                response=response,
+            )
+
     def test_saves_payload_and_metadata_in_one_transaction(self):
         connection = _Connection()
         start = datetime(2025, 1, 1, tzinfo=timezone.utc)
@@ -61,7 +77,7 @@ class BronzeIngestTest(unittest.TestCase):
 
         ingestion_id = save_bronze_response(
             connection,
-            ingestion_key="run-1:fetch:1",
+            bronze_request_key="run-1:fetch:1",
             product_id="BTC-USD",
             granularity_seconds=3600,
             start=start,
@@ -77,7 +93,7 @@ class BronzeIngestTest(unittest.TestCase):
         self.assertEqual(parameters["requested_start"], start)
         self.assertEqual(json.loads(parameters["response_headers"]), response.headers)
 
-    def test_returns_existing_id_for_an_existing_ingestion_key(self):
+    def test_returns_existing_id_for_an_existing_bronze_request_key(self):
         start = datetime(2025, 1, 1, tzinfo=timezone.utc)
         end = datetime(2025, 1, 1, 1, tzinfo=timezone.utc)
         response = CoinbaseResponse(
@@ -91,7 +107,7 @@ class BronzeIngestTest(unittest.TestCase):
 
         ingestion_id = save_bronze_response(
             connection,
-            ingestion_key="dag:run:fetch:1",
+            bronze_request_key="dag:run:fetch:1",
             product_id="BTC-USD",
             granularity_seconds=3600,
             start=start,
@@ -118,7 +134,7 @@ class BronzeIngestTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "could not be read"):
             save_bronze_response(
                 connection,
-                ingestion_key="missing",
+                bronze_request_key="missing",
                 product_id="BTC-USD",
                 granularity_seconds=3600,
                 start=start,

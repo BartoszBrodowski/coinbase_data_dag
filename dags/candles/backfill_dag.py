@@ -7,10 +7,16 @@ from airflow.sdk.exceptions import AirflowFailException
 
 from candles.bronze_ingest import ingest_one_interval
 from candles.gold_load import load_silver_to_gold
+from candles.settings import (
+    DEFAULT_GRANULARITY_SECONDS,
+    DEFAULT_PRODUCT_ID,
+    MAX_ACTIVE_API_TASKS,
+    MAX_BACKFILL_INTERVALS,
+)
 from candles.silver_transform import transform_bronze_to_silver
 from shared.utils import (
     COINBASE_API_RETRY_ARGS,
-    build_ingestion_key,
+    build_bronze_request_key,
     fail_without_retry_on,
 )
 from shared.coinbase_client import (
@@ -19,22 +25,20 @@ from shared.coinbase_client import (
     MAX_CANDLES_PER_REQUEST,
     SUPPORTED_GRANULARITIES,
 )
+from shared.validation import ACTIVE_PRODUCT_IDS, require_active_product
 
 
 BACKFILL_START_DATE = datetime(2025, 1, 1, tzinfo=timezone.utc)
-MAX_BACKFILL_INTERVALS = 2_000
-MAX_ACTIVE_API_TASKS = 2
-
 BACKFILL_PARAMS = {
     "product_id": Param(
-        "BTC-USD",
+        DEFAULT_PRODUCT_ID,
         type="string",
-        pattern=r"^[A-Z0-9]+-[A-Z0-9]+$",
+        enum=sorted(ACTIVE_PRODUCT_IDS),
         title="Coinbase product",
-        description="For example BTC-USD or ETH-USD.",
+        description="Select a product enabled for candle ingestion.",
     ),
     "granularity_seconds": Param(
-        3600,
+        DEFAULT_GRANULARITY_SECONDS,
         type="integer",
         enum=sorted(SUPPORTED_GRANULARITIES),
         title="Candle size in seconds",
@@ -71,6 +75,7 @@ def parse_utc_datetime(value):
 def split_backfill_interval(product_id, granularity_seconds, start, end):
     """Return consecutive intervals containing at most 300 candles each."""
 
+    require_active_product(product_id)
     if granularity_seconds not in SUPPORTED_GRANULARITIES:
         raise ValueError("unsupported Coinbase candle granularity")
     if start >= end:
@@ -128,7 +133,7 @@ def ingest_backfill_interval(interval):
 
     with fail_without_retry_on(CoinbaseNonRetryableAPIError, ValueError):
         return ingest_one_interval(
-            ingestion_key=build_ingestion_key(
+            bronze_request_key=build_bronze_request_key(
                 task_instance,
                 map_index=task_instance.map_index,
             ),

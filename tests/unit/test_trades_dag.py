@@ -2,14 +2,24 @@ import sys
 import unittest
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import call, patch
 
 
 DAGS_DIRECTORY = Path(__file__).parents[2] / "dags"
 sys.path.insert(0, str(DAGS_DIRECTORY))
 
-from trades.settings import TRADES_API_POOL
-from trades.trades_dag import _load_silver_pages, build_ingestion_request, dag
+from trades.settings import (
+    MAX_CATCHUP_PAGES_PER_RUN,
+    MAX_LIVE_PAGES_PER_RUN,
+    TRADES_API_POOL,
+)
+from trades.trades_dag import (
+    _ingest_bronze_pages,
+    _load_silver_pages,
+    build_ingestion_request,
+    dag,
+)
 
 
 class TradesDagTest(unittest.TestCase):
@@ -62,7 +72,8 @@ class TradesDagTest(unittest.TestCase):
         request = build_ingestion_request({"mode": "live"}, "scheduled")
 
         self.assertEqual(request["mode"], "live")
-        self.assertEqual(request["max_pages"], 3)
+        self.assertEqual(request["cursor_direction"], "before")
+        self.assertEqual(request["max_pages"], MAX_LIVE_PAGES_PER_RUN)
 
     def test_manual_run_can_resolve_to_bounded_catchup_mode(self):
         request = build_ingestion_request(
@@ -70,13 +81,115 @@ class TradesDagTest(unittest.TestCase):
                 "mode": "catchup",
                 "oldest_time": "2026-08-01T00:00:00Z",
                 "after_cursor": None,
-                "max_pages": 10,
+                "max_pages": MAX_CATCHUP_PAGES_PER_RUN,
             },
             "manual",
         )
 
         self.assertEqual(request["mode"], "catchup")
-        self.assertEqual(request["max_pages"], 10)
+        self.assertEqual(request["cursor_direction"], "after")
+        self.assertEqual(request["max_pages"], MAX_CATCHUP_PAGES_PER_RUN)
+
+    def test_live_bronze_pages_follow_before_cursors(self):
+        connection = object()
+        request = {
+            "mode": "live",
+            "source": "coinbase",
+            "product_id": "BTC-USD",
+            "process_key": "live:coinbase:BTC-USD",
+            "max_pages": 2,
+            "cursor_direction": "before",
+        }
+        task_instance = SimpleNamespace(
+            dag_id="coinbase_trades_ingest",
+            run_id="run-1",
+            task_id="ingest_bronze_pages",
+            try_number=1,
+        )
+        context = {
+            "ti": task_instance,
+            "dag_run": SimpleNamespace(run_id="run-1"),
+        }
+
+        with patch("trades.trades_dag.market_data_connection") as connection_factory:
+            connection_factory.return_value.__enter__.return_value = connection
+            with patch(
+                "trades.trades_dag.start_or_resume_ingestion",
+                return_value=("105", "ACTIVE"),
+            ):
+                with patch(
+                    "trades.trades_dag.ingest_trade_page",
+                    side_effect=(
+                        {
+                            "ingestion_id": 91,
+                            "response_cb_before": "106",
+                            "response_cb_after": "104",
+                        },
+                        {
+                            "ingestion_id": 92,
+                            "response_cb_before": "107",
+                            "response_cb_after": "105",
+                        },
+                    ),
+                ) as ingest:
+                    result = _ingest_bronze_pages(request, context)
+
+        self.assertEqual(result["ingestion_ids"], [91, 92])
+        self.assertEqual(ingest.call_args_list[0].kwargs["before"], "105")
+        self.assertIsNone(ingest.call_args_list[0].kwargs["after"])
+        self.assertEqual(ingest.call_args_list[1].kwargs["before"], "106")
+        self.assertIsNone(ingest.call_args_list[1].kwargs["after"])
+
+    def test_catchup_bronze_pages_follow_after_cursors(self):
+        connection = object()
+        request = {
+            "mode": "catchup",
+            "source": "coinbase",
+            "product_id": "BTC-USD",
+            "process_key": "catchup:one",
+            "oldest_time": "2026-08-01T00:00:00+00:00",
+            "cursor_direction": "after",
+            "max_pages": 2,
+        }
+        task_instance = SimpleNamespace(
+            dag_id="coinbase_trades_ingest",
+            run_id="run-2",
+            task_id="ingest_bronze_pages",
+            try_number=1,
+        )
+        context = {
+            "ti": task_instance,
+            "dag_run": SimpleNamespace(run_id="run-2"),
+        }
+
+        with patch("trades.trades_dag.market_data_connection") as connection_factory:
+            connection_factory.return_value.__enter__.return_value = connection
+            with patch(
+                "trades.trades_dag.start_or_resume_ingestion",
+                return_value=("105", "ACTIVE"),
+            ):
+                with patch(
+                    "trades.trades_dag.ingest_trade_page",
+                    side_effect=(
+                        {
+                            "ingestion_id": 91,
+                            "response_cb_before": "106",
+                            "response_cb_after": "104",
+                        },
+                        {
+                            "ingestion_id": 92,
+                            "response_cb_before": "107",
+                            "response_cb_after": "103",
+                        },
+                    ),
+                ) as ingest:
+                    result = _ingest_bronze_pages(request, context)
+
+        self.assertEqual(result["ingestion_ids"], [91, 92])
+        self.assertIsNone(ingest.call_args_list[0].kwargs["before"])
+        self.assertEqual(ingest.call_args_list[0].kwargs["after"], "105")
+        self.assertIsNone(ingest.call_args_list[1].kwargs["before"])
+        self.assertEqual(ingest.call_args_list[1].kwargs["after"], "104")
 
     def test_scheduled_run_cannot_enable_catchup_mode(self):
         with self.assertRaisesRegex(ValueError, "only be triggered manually"):

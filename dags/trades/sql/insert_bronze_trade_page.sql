@@ -1,7 +1,9 @@
 INSERT INTO bronze.coinbase_trades_raw (
-    ingestion_key,
-    trade_ingestion_key,
+    bronze_request_key,
+    process_key,
     product_id,
+    requested_before,
+    requested_after,
     response_cb_before,
     response_cb_after,
     request_duration_ms,
@@ -14,9 +16,11 @@ INSERT INTO bronze.coinbase_trades_raw (
     attempt_number
 )
 VALUES (
-    %(ingestion_key)s,
-    %(trade_ingestion_key)s,
+    %(bronze_request_key)s,
+    %(process_key)s,
     %(product_id)s,
+    %(requested_before)s,
+    %(requested_after)s,
     %(response_cb_before)s,
     %(response_cb_after)s,
     %(request_duration_ms)s,
@@ -28,5 +32,5 @@ VALUES (
     %(pipeline_task_id)s,
     %(attempt_number)s
 )
-ON CONFLICT (ingestion_key) DO NOTHING
+ON CONFLICT (bronze_request_key) DO NOTHING
 RETURNING ingestion_id;

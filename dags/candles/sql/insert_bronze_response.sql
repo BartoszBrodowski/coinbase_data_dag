@@ -1,5 +1,5 @@
 INSERT INTO bronze.coinbase_candles_raw (
-    ingestion_key,
+    bronze_request_key,
     product_id,
     granularity_seconds,
     requested_start,
@@ -11,7 +11,7 @@ INSERT INTO bronze.coinbase_candles_raw (
     response_body
 )
 VALUES (
-    %(ingestion_key)s,
+    %(bronze_request_key)s,
     %(product_id)s,
     %(granularity_seconds)s,
     %(requested_start)s,
@@ -22,7 +22,7 @@ VALUES (
     %(response_headers)s::jsonb,
     %(response_body)s
 )
--- Prevents duplicate ingestion_key entries from being
+-- Prevents duplicate Bronze request-key entries from being
 -- inserted into the table (in case of hiccups or retries)
-ON CONFLICT (ingestion_key) DO NOTHING
+ON CONFLICT (bronze_request_key) DO NOTHING
 RETURNING ingestion_id

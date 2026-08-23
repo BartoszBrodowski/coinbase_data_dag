@@ -80,6 +80,22 @@ class TradeSilverTransformTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid maker side"):
             parse_trades(payload)
 
+    def test_rejects_a_non_string_maker_side(self):
+        payload = json.dumps(
+            [
+                {
+                    "trade_id": 1,
+                    "price": "1",
+                    "size": "1",
+                    "time": "2026-08-10T09:22:43Z",
+                    "side": [],
+                }
+            ]
+        )
+
+        with self.assertRaisesRegex(ValueError, "invalid maker side"):
+            parse_trades(payload)
+
     def test_commits_silver_before_advancing_the_watermark(self):
         bronze = (
             91,
@@ -88,6 +104,7 @@ class TradeSilverTransformTest(unittest.TestCase):
             "BTC-USD",
             "live",
             None,
+            "1068720622",
             "1068720621",
             "manual__2026-08-10",
             200,
@@ -109,6 +126,9 @@ class TradeSilverTransformTest(unittest.TestCase):
         executed_sql = [sql for sql, _ in connection.cursor_instance.executions]
         self.assertIn("UPDATE bronze.coinbase_trades_raw", executed_sql[1])
         self.assertIn("UPDATE control.trade_ingestions", executed_sql[2])
+        update_parameters = connection.cursor_instance.executions[2][1]
+        self.assertEqual(update_parameters["response_cb_before"], "1068720622")
+        self.assertEqual(update_parameters["response_cb_after"], "1068720621")
 
     def test_catchup_filters_at_time_boundary_without_moving_live_watermark(self):
         bronze = (
@@ -118,6 +138,7 @@ class TradeSilverTransformTest(unittest.TestCase):
             "BTC-USD",
             "catchup",
             datetime(2026, 8, 10, tzinfo=timezone.utc),
+            "1068720622",
             "1068720621",
             "manual__2026-08-11",
             200,

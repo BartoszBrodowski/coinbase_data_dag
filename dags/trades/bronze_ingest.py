@@ -5,26 +5,27 @@ import logging
 from pathlib import Path
 
 from shared.coinbase_client import fetch_trades
-from trades.settings import require_active_product
+from shared.utils import load_sql, market_data_connection
+from shared.validation import require_active_product
 
 
 logger = logging.getLogger(__name__)
 SQL_DIRECTORY = Path(__file__).with_name("sql")
-INSERT_TRADE_PAGE_SQL = (SQL_DIRECTORY / "insert_bronze_trade_page.sql").read_text(
-    encoding="utf-8"
+INSERT_TRADE_PAGE_SQL = load_sql(SQL_DIRECTORY, "insert_bronze_trade_page.sql")
+SELECT_TRADE_PAGE_BY_KEY_SQL = load_sql(
+    SQL_DIRECTORY, "select_bronze_trade_page_by_key.sql"
 )
-SELECT_TRADE_PAGE_BY_KEY_SQL = (
-    SQL_DIRECTORY / "select_bronze_trade_page_by_key.sql"
-).read_text(encoding="utf-8")
 
 
 def save_trade_page(
     connection,
     *,
-    ingestion_key,
-    trade_ingestion_key,
+    bronze_request_key,
+    process_key,
     product_id,
     response,
+    requested_before=None,
+    requested_after=None,
     pipeline_run_id=None,
     pipeline_task_id=None,
     attempt_number=None,
@@ -34,9 +35,11 @@ def save_trade_page(
     require_active_product(product_id)
 
     parameters = {
-        "ingestion_key": ingestion_key,
-        "trade_ingestion_key": trade_ingestion_key,
+        "bronze_request_key": bronze_request_key,
+        "process_key": process_key,
         "product_id": product_id,
+        "requested_before": requested_before,
+        "requested_after": requested_after,
         "response_cb_before": response.headers.get("CB-BEFORE"),
         "response_cb_after": response.headers.get("CB-AFTER"),
         "request_duration_ms": response.duration_ms,
@@ -56,7 +59,7 @@ def save_trade_page(
             if inserted is None:
                 cursor.execute(
                     SELECT_TRADE_PAGE_BY_KEY_SQL,
-                    {"ingestion_key": ingestion_key},
+                    {"bronze_request_key": bronze_request_key},
                 )
                 existing = cursor.fetchone()
                 if existing is None:
@@ -69,10 +72,9 @@ def save_trade_page(
 
 
 def ingest_trade_page(
-    connection,
     *,
-    ingestion_key,
-    trade_ingestion_key,
+    bronze_request_key,
+    process_key,
     product_id,
     before=None,
     after=None,
@@ -91,16 +93,31 @@ def ingest_trade_page(
         after=after,
         limit=limit,
     )
-    ingestion_id = save_trade_page(
-        connection,
-        ingestion_key=ingestion_key,
-        trade_ingestion_key=trade_ingestion_key,
-        product_id=product_id,
-        response=response,
-        pipeline_run_id=pipeline_run_id,
-        pipeline_task_id=pipeline_task_id,
-        attempt_number=attempt_number,
-    )
+    with market_data_connection() as connection:
+        ingestion_id = save_trade_page(
+            connection,
+            bronze_request_key=bronze_request_key,
+            process_key=process_key,
+            product_id=product_id,
+            response=response,
+            requested_before=before,
+            requested_after=after,
+            pipeline_run_id=pipeline_run_id,
+            pipeline_task_id=pipeline_task_id,
+            attempt_number=attempt_number,
+        )
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT response_cb_before, response_cb_after
+                FROM bronze.coinbase_trades_raw
+                WHERE ingestion_id = %(ingestion_id)s
+                """,
+                {"ingestion_id": ingestion_id},
+            )
+            response_cb_before, response_cb_after = cursor.fetchone()
+
     response.raise_for_status()
 
     logger.info(
@@ -111,4 +128,8 @@ def ingest_trade_page(
         response.status_code,
         response.duration_ms,
     )
-    return ingestion_id
+    return {
+        "ingestion_id": ingestion_id,
+        "response_cb_before": response_cb_before,
+        "response_cb_after": response_cb_after,
+    }

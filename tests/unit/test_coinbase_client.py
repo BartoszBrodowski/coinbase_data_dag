@@ -117,6 +117,21 @@ class CoinbaseClientTest(unittest.TestCase):
                 with self.assertRaises(CoinbaseNonRetryableAPIError):
                     response.raise_for_status()
 
+    def test_uses_json_message_or_raw_non_object_error_body(self):
+        cases = (
+            ('{"message":"Bad request"}', "Bad request"),
+            ('["Bad request"]', '["Bad request"]'),
+        )
+
+        for body, expected_message in cases:
+            with self.subTest(body=body):
+                response = CoinbaseResponse(400, body, "application/json", {}, 1)
+
+                with self.assertRaises(CoinbaseNonRetryableAPIError) as raised:
+                    response.raise_for_status()
+
+                self.assertIn(expected_message, str(raised.exception))
+
     def test_rejects_implicit_timezone(self):
         with self.assertRaisesRegex(ValueError, "timezone-aware"):
             fetch_candles(

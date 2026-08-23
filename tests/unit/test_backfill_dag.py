@@ -40,6 +40,13 @@ class BackfillIntervalTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "start must be earlier than end"):
             split_backfill_interval("BTC-USD", 3600, value, value)
 
+    def test_rejects_products_not_enabled_for_candle_ingestion(self):
+        start = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 1, 2, tzinfo=timezone.utc)
+
+        with self.assertRaisesRegex(ValueError, "not enabled for ETH-USD"):
+            split_backfill_interval("ETH-USD", 3600, start, end)
+
     def test_requires_timezone_in_input(self):
         with self.assertRaisesRegex(ValueError, "must include a timezone"):
             parse_utc_datetime("2025-01-01T00:00:00")

@@ -5,5 +5,5 @@ SET
         ELSE 'PAUSED'
     END,
     updated_at = CURRENT_TIMESTAMP
-WHERE ingestion_key = %(ingestion_key)s
+WHERE process_key = %(process_key)s
   AND mode = 'catchup';

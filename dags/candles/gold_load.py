@@ -1,12 +1,13 @@
 import logging
+from pathlib import Path
 
-from shared.utils import market_data_connection
-from candles.utils import load_sql
+from shared.utils import load_sql, market_data_connection
 
 
 logger = logging.getLogger(__name__)
+SQL_DIRECTORY = Path(__file__).with_name("sql")
 
-UPSERT_GOLD_SQL = load_sql("upsert_gold_candles.sql")
+UPSERT_GOLD_SQL = load_sql(SQL_DIRECTORY, "upsert_gold_candles.sql")
 
 
 def upsert_gold(cursor, ingestion_id):
