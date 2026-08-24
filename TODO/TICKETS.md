@@ -140,10 +140,10 @@ deduplikacja, bezpieczne wznawianie DAG-a, capacity planning i retencja danych.
 - [x] Aktualizuj watermark dopiero po zatwierdzeniu Silver; awaria pomiędzy Bronze i Silver ma prowadzić do bezpiecznego ponowienia, a nie utraty transakcji.
 - [x] Pierwszą wersję uruchom wyłącznie dla `BTC-USD`; kolejne produkty dodawaj dopiero po pomiarze tygodniowego przyrostu danych.
 - [x] Utwórz DAG uruchamiany początkowo co 10–15 minut z `max_active_runs=1` i osobnym Airflow Pool dla endpointu trades.
-- [x] Wprowadź konfigurowalne `max_pages_per_run` oraz maksymalny czas zadania; zacznij od 2–5 stron, a pozostawiony backlog obsłuż w kolejnych runach.
+- [x] Wprowadź konfigurowalne `page_amount`, czterostronicowy limit pojedynczego batcha oraz automatyczne wznowienie pozostawionego backlogu w kolejnych runach.
 - [x] Ponawiaj timeouty, HTTP 429 i 5xx z exponential backoff; nie ponawiaj deterministycznych błędów kontraktu danych.
-- [x] Dodaj ograniczony tryb catch-up z jawnym najstarszym czasem lub kursorem; nie pozwalaj na nieograniczone pobranie całej historii.
-- [ ] Dodaj `gold.trade_activity_hourly` z liczbą transakcji, base volume, quote volume, VWAP oraz licznikami maker buy/sell; agregaty przechowuj dłużej niż pojedyncze transakcje.
+- [x] Dodaj ograniczony tryb catch-up z jawną liczbą stron i opcjonalnym kursorem; nie pozwalaj na nieograniczone pobranie całej historii.
+- [x] Dodaj `gold.trade_activity_hourly` z liczbą transakcji, base volume, quote volume, VWAP oraz licznikami maker buy/sell; agregaty przechowuj dłużej niż pojedyncze transakcje.
 - [ ] Zdefiniuj konfigurowalną politykę retencji; jako wartości startowe przyjmij 7 dni dla Bronze i 30 dni dla Silver, ale zatwierdź je po pierwszym tygodniu pomiarów.
 - [ ] Dodaj dzienny krok retencji usuwający dane małymi partiami dopiero po udanym zbudowaniu i sprawdzeniu agregatów; zachowaj watermarki i metryki wykonania.
 - [ ] Jawnie zdecyduj, jak zachować lineage Silver po usunięciu krócej przechowywanego Bronze, np. przez trwałe metadane ingestu w `control` zamiast blokującego klucza obcego.

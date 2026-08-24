@@ -194,6 +194,14 @@ def transform_bronze_to_silver(connection, ingestion_id):
     return {
         "trades_processed": len(trades),
         "completed": completed,
+        "oldest_trade_time": min(
+            (trade.time for trade in trades),
+            default=None,
+        ),
+        "newest_trade_time": max(
+            (trade.time for trade in trades),
+            default=None,
+        ),
     }
 
 

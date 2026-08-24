@@ -1,4 +1,4 @@
-# Gold candles contract
+# Gold read-model contracts
 
 Gold is a physical table populated from validated Silver candles. A table is
 used instead of a view so the consumer has a stable, independently indexed
@@ -47,3 +47,14 @@ ORDER BY candle_start;
 
 Gold is updated with an idempotent upsert. Processing the same Silver records
 again updates the existing candles instead of creating duplicates.
+
+## Hourly trade activity
+
+`gold.trade_activity_hourly` is the read model for the incremental trade
+pipeline. Its grain is one UTC hour per source and product. It contains the
+number of trades, base volume, quote volume, VWAP, and maker-side buy/sell
+counts.
+
+The table is rebuilt for only the hours touched by each committed Silver batch.
+The aggregation is calculated from `silver.trades` and written with an upsert,
+so overlapping API pages and retries do not double-count activity.

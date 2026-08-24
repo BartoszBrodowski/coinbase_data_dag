@@ -25,12 +25,13 @@ flowchart LR
         S[(Silver typed records)]
         C[(Control cursors and state)]
         G[(Gold candles)]
+        A[(Gold hourly trade activity)]
     end
 
     UI[Streamlit dashboard]
 
     API --> CANDLE --> B --> S --> G --> UI
-    API --> TRADE --> B
+    API --> TRADE --> B --> S --> A --> UI
     C <--> TRADE
     B --> S
 ```
@@ -41,10 +42,12 @@ flowchart LR
 |---|---|---|---|
 | Candles | Hourly | Bronze → Silver → Gold | Closed Airflow intervals, API retries, typed validation, idempotent upserts |
 | Candle backfill | Manual | Bronze → Silver → Gold | Validated bounded range, requests split at the 300-candle API limit, dynamic task mapping |
-| Trades | Every 15 minutes or manual catch-up | Bronze → Silver + Control | Cursor pagination, bounded pages per run, watermark advances only after Silver commits |
+| Live trades | Every 15 minutes | Bronze → Silver + Gold activity + Control | Cursor pagination, bounded polling, watermark advances only after Silver commits |
+| Trade catch-up | Manual page count | Bronze → Silver + Gold activity + Control | Automatic four-page batches, exact-cursor overlap detection, separate historical cursor |
 
-Trade aggregates and retention are deliberately still roadmap items. The
-dashboard currently exposes daily candles only.
+Retention and capacity reporting remain roadmap items. The dashboard exposes
+daily candles and hourly trade activity; raw trades remain behind the Silver
+layer and are not queried directly by the UI.
 
 ## Technology
 
@@ -137,6 +140,24 @@ Open the `load_silver` task log and search for the same stage summary and
 coverage warning messages. The `load_gold` log reports the number of rows
 written to the dashboard-facing layer.
 
+To demonstrate the trade path, wait for the scheduled 15-minute run of
+`coinbase_trades_live`. Wait for `resolve_live_ingestion_request`,
+`ingest_bronze_pages`, `load_silver_pages`, and `load_gold_trade_activity` to
+finish. Then open the dashboard's **Trade activity** tab. It displays hourly
+trade count, VWAP, base and quote volume, and maker buy/sell counts from the
+Gold aggregate.
+
+For older trade history, open `coinbase_trades_catchup`, use **Trigger DAG**,
+and set `page_amount` to the total number of Coinbase pages to fetch. Leave
+`after_cursor` empty to start from the live stream's last committed historical
+cursor. This unscheduled DAG has no mode or date-range input; after the initial
+manual run, its bounded batches continue internally. Airflow
+processes the request automatically in serial batches of four pages until the
+requested amount, the end of history, or an exact cursor page already committed
+to Silver is reached. Airflow's built-in **Backfill** action is not available
+for either trade DAG because logical schedule dates cannot select pages from
+Coinbase's cursor-only trades endpoint.
+
 When finished, stop the containers without deleting their volumes:
 
 ```powershell
@@ -184,7 +205,9 @@ retries and repeated backfills do not create duplicate business records.
 `control.trade_ingestions` stores separate live and catch-up process state. A
 trade page is written to Bronze first. Its cursor moves only in the same
 transaction that commits validated Silver records, allowing a failed run to
-resume without skipping trades.
+resume without skipping trades. Page-count catch-ups continue automatically in
+four-page DAG runs and use committed Bronze `requested_after` cursors to stop
+when they reach previously processed coverage.
 
 ### Error handling
 
@@ -221,7 +244,8 @@ guides cover the [scheduled candle DAG](docs/airflow-dag.md),
 ## Current limitations and roadmap
 
 - Only `BTC-USD` is enabled.
-- The dashboard exposes daily candles rather than the trade pipeline.
+- The dashboard exposes daily candles and hourly trade activity; it does not
+  expose raw individual trades.
 - Data validation is enforced during parsing and by PostgreSQL constraints,
   but quality results and freshness history are not yet persisted as a
   separate DAG stage.

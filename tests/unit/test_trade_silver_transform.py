@@ -145,7 +145,12 @@ class TradeSilverTransformTest(unittest.TestCase):
 
         self.assertEqual(
             rows_processed,
-            {"trades_processed": 1, "completed": False},
+            {
+                "trades_processed": 1,
+                "completed": False,
+                "oldest_trade_time": datetime(2026, 8, 10, 9, 22, 43, tzinfo=timezone.utc),
+                "newest_trade_time": datetime(2026, 8, 10, 9, 22, 43, tzinfo=timezone.utc),
+            },
         )
         self.assertTrue(
             any(
@@ -202,7 +207,16 @@ class TradeSilverTransformTest(unittest.TestCase):
 
         result = transform_bronze_to_silver(connection, 91)
 
-        self.assertEqual(result, {"trades_processed": 1, "completed": True})
+        boundary_time = datetime(2026, 8, 10, 0, 0, 1, tzinfo=timezone.utc)
+        self.assertEqual(
+            result,
+            {
+                "trades_processed": 1,
+                "completed": True,
+                "oldest_trade_time": boundary_time,
+                "newest_trade_time": boundary_time,
+            },
+        )
         self.assertEqual(len(connection.cursor_instance.batch[1]), 1)
         executed_sql = [sql for sql, _ in connection.cursor_instance.executions]
         self.assertIn("UPDATE control.trade_ingestions", executed_sql[2])

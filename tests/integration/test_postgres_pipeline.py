@@ -3,6 +3,7 @@ import os
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import psycopg2
@@ -17,6 +18,7 @@ from candles.bronze_ingest import save_bronze_response
 from candles.gold_load import upsert_gold
 from candles.silver_transform import parse_candles, upsert_candles
 from shared.coinbase_client import COINBASE_SOURCE, CoinbaseResponse
+from trades.gold_load import load_trade_activity_hourly
 
 
 def _database_settings(database_name):
@@ -144,6 +146,13 @@ class PostgresPipelineIntegrationTest(unittest.TestCase):
                 )
                 process_columns = {row[0] for row in cursor.fetchall()}
 
+                cursor.execute(
+                    """
+                    SELECT to_regclass('gold.trade_activity_hourly')
+                    """
+                )
+                trade_activity_table = cursor.fetchone()[0]
+
         self.assertTrue(
             {
                 "bronze_request_key",
@@ -164,6 +173,96 @@ class PostgresPipelineIntegrationTest(unittest.TestCase):
             }.issubset(process_columns)
         )
         self.assertNotIn("ingestion_key", process_columns)
+        self.assertEqual(trade_activity_table, "gold.trade_activity_hourly")
+
+    def test_trade_activity_hourly_is_idempotent(self):
+        first_time = datetime(2026, 2, 1, 10, 15, tzinfo=timezone.utc)
+        second_time = datetime(2026, 2, 1, 10, 45, tzinfo=timezone.utc)
+        outside_time = datetime(2026, 2, 1, 11, 15, tzinfo=timezone.utc)
+
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.executemany(
+                    """
+                    INSERT INTO silver.trades (
+                        source, product_id, trade_id, price, time, size, side,
+                        bronze_ingestion_id
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    [
+                        (
+                            "coinbase",
+                            "BTC-USD",
+                            2001,
+                            Decimal("100"),
+                            first_time,
+                            Decimal("2"),
+                            "buy",
+                            1,
+                        ),
+                        (
+                            "coinbase",
+                            "BTC-USD",
+                            2002,
+                            Decimal("110"),
+                            second_time,
+                            Decimal("1"),
+                            "sell",
+                            2,
+                        ),
+                        (
+                            "coinbase",
+                            "BTC-USD",
+                            2003,
+                            Decimal("120"),
+                            outside_time,
+                            Decimal("1"),
+                            "buy",
+                            3,
+                        ),
+                    ],
+                )
+
+        rows_written = load_trade_activity_hourly(
+            self.connection,
+            source="coinbase",
+            product_id="BTC-USD",
+            start=first_time,
+            end=first_time + timedelta(microseconds=1),
+        )
+        repeated_rows_written = load_trade_activity_hourly(
+            self.connection,
+            source="coinbase",
+            product_id="BTC-USD",
+            start=second_time,
+            end=second_time + timedelta(microseconds=1),
+        )
+
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        trade_count,
+                        base_volume,
+                        quote_volume,
+                        vwap,
+                        maker_buy_count,
+                        maker_sell_count
+                    FROM gold.trade_activity_hourly
+                    WHERE source = 'coinbase'
+                      AND product_id = 'BTC-USD'
+                      AND hour_start = '2026-02-01T10:00:00Z'
+                    """
+                )
+                aggregate = cursor.fetchone()
+
+        self.assertEqual(rows_written, 1)
+        self.assertEqual(repeated_rows_written, 1)
+        self.assertEqual(aggregate[:3], (2, Decimal("3"), Decimal("310")))
+        self.assertAlmostEqual(float(aggregate[3]), 103.33333333333333)
+        self.assertEqual(aggregate[4:], (1, 1))
 
     def test_candle_pipeline_is_idempotent(self):
         interval_start = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -254,6 +353,16 @@ class PostgresPipelineIntegrationTest(unittest.TestCase):
                         ),
                         has_table_privilege(
                             'market_data_airflow', 'gold.candles', 'UPDATE'
+                        ),
+                        has_table_privilege(
+                            'market_data_dashboard',
+                            'gold.trade_activity_hourly',
+                            'SELECT'
+                        ),
+                        has_table_privilege(
+                            'market_data_dashboard',
+                            'gold.trade_activity_hourly',
+                            'INSERT'
                         )
                     """
                 )
@@ -261,7 +370,7 @@ class PostgresPipelineIntegrationTest(unittest.TestCase):
 
         self.assertEqual(
             privileges,
-            (True, False, False, True, True, True),
+            (True, False, False, True, True, True, True, False),
         )
 
 

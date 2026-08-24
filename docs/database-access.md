@@ -9,9 +9,9 @@ The project deliberately uses separate PostgreSQL identities:
 | `market_data_airflow` | DAG runtime | Bronze read/insert; Silver and Gold read/insert/update |
 | `airflow` | Airflow metadata | Owns and connects only to the `airflow` database |
 
-`gold.candles` is a physical read table populated from Silver by an Airflow
-task. The runtime role can upsert its rows, but it is not an owner and cannot
-alter the Gold schema or its objects.
+`gold.candles` and `gold.trade_activity_hourly` are physical read tables
+populated from Silver by Airflow tasks. The runtime role can upsert their rows,
+but it is not an owner and cannot alter the Gold schema or its objects.
 
 ## Recreate or update the setup
 

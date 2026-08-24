@@ -5,6 +5,11 @@ pełnej historii, dopóki pojedynczy przedział czasu nie przejdzie całej ście
 
 Szczegółowe kryteria ukończenia znajdują się w [TICKETS.md](TICKETS.md).
 
+Rdzeń MVP jest zaimplementowany i zweryfikowany testami jednostkowymi oraz
+integracyjnymi. Niezaznaczone punkty poniżej oznaczają świadomie odłożone
+czynności demonstracyjne albo funkcje wykraczające poza obecny zakres, a nie
+brak podstawowej ścieżki danych.
+
 ## Etap 0 — decyzje
 
 - [x] Wybierz pierwszą parę (`BTC-USD`).
@@ -29,13 +34,20 @@ Szczegółowe kryteria ukończenia znajdują się w [TICKETS.md](TICKETS.md).
 ## Etap 3 — prezentacja
 
 - [x] Wykonaj TICKET-008: prosty wykres świec z Gold.
-- [ ] Sprawdź pusty zakres, jeden rekord i zwykły zakres danych.
+- [ ] W ramach końcowego walkthrough sprawdź pusty zakres, jeden rekord i
+  zwykły zakres danych.
 
 ## Etap 4 — niezawodność
 
-- [ ] Wykonaj TICKET-009: testy, retry i jakość danych.
-- [ ] Uruchom ten sam przedział dwa razy i potwierdź brak duplikatów.
-- [ ] Wykonaj mały backfill, np. siedem dni.
+- [x] Dodaj testy jednostkowe i integracyjne dla głównej ścieżki oraz upsertów.
+- [x] Skonfiguruj ograniczone retry dla timeoutów, HTTP 429 i błędów 5xx.
+- [x] Rozróżnij błędy API od deterministycznych błędów kontraktu danych.
+- [x] Loguj liczniki etapów oraz niepełne pokrycie świec w Airflow bez zapisu
+  liczników w bazie.
+- [x] Potwierdź idempotencję ponownego zapisu tego samego przedziału testem
+  integracyjnym.
+- [ ] W ramach końcowego walkthrough wykonaj mały backfill, np. siedem dni.
+- [ ] Dodaj trwały zapis wyników kontroli luk i świeżości.
 - [x] Opisz uruchomienie projektu od pustego środowiska.
 
 ## Definicja ukończenia MVP
