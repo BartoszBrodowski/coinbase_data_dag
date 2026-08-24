@@ -18,19 +18,23 @@ class TradeGoldLoadTest(unittest.TestCase):
         start = datetime(2026, 8, 24, 10, 15, tzinfo=timezone.utc)
         end = datetime(2026, 8, 24, 11, 20, tzinfo=timezone.utc)
 
-        with patch(
-            "trades.gold_load.upsert_trade_activity_hourly",
-            return_value=2,
-        ) as upsert:
-            rows_written = load_trade_activity_hourly(
-                connection,
-                source="coinbase",
-                product_id="BTC-USD",
-                start=start,
-                end=end,
-            )
+        with self.assertLogs("trades.gold_load", level="INFO") as logs:
+            with patch(
+                "trades.gold_load.upsert_trade_activity_hourly",
+                return_value=2,
+            ) as upsert:
+                rows_written = load_trade_activity_hourly(
+                    connection,
+                    source="coinbase",
+                    product_id="BTC-USD",
+                    start=start,
+                    end=end,
+                )
 
         self.assertEqual(rows_written, 2)
+        self.assertTrue(
+            any("records_written=2" in message for message in logs.output)
+        )
         upsert.assert_called_once_with(
             cursor,
             source="coinbase",

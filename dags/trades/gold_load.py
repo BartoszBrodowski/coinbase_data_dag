@@ -64,11 +64,13 @@ def load_trade_activity_hourly(
 
     logger.info(
         "market_data_stage_summary stage=gold_trade_activity "
-        "source=%s product_id=%s start=%s end=%s hours_written=%s",
+        "source=%s product_id=%s start=%s end=%s "
+        "records_written=%s hours_written=%s",
         source,
         product_id,
         full_hour_start.isoformat(),
         full_hour_end.isoformat(),
+        rows_written,
         rows_written,
     )
     return rows_written

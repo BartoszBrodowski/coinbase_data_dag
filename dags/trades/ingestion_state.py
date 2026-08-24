@@ -20,6 +20,18 @@ SELECT_COMMITTED_AFTER_CURSOR_SQL = load_sql(
     SQL_DIRECTORY,
     "select_committed_trade_page_by_after_cursor.sql",
 )
+SELECT_HIGHEST_COMMITTED_TRADE_ID_SQL = load_sql(
+    SQL_DIRECTORY,
+    "select_highest_committed_trade_id.sql",
+)
+SELECT_TRADE_INGESTION_SUMMARY_SQL = load_sql(
+    SQL_DIRECTORY,
+    "select_trade_ingestion_summary.sql",
+)
+SELECT_TRADE_INGESTION_STATUS_SQL = load_sql(
+    SQL_DIRECTORY,
+    "select_trade_ingestion_status.sql",
+)
 
 
 def live_process_key(source, product_id):
@@ -32,9 +44,8 @@ def validate_catchup_request(source, product_id, after_cursor, page_amount):
     require_active_product(product_id)
 
     if not isinstance(after_cursor, str) or after_cursor.strip() == "":
-        normalized_cursor = None
-    else:
-        normalized_cursor = after_cursor.strip()
+        raise ValueError("after_cursor is required for trade catch-up")
+    normalized_cursor = after_cursor.strip()
 
     if (
         not isinstance(page_amount, int)
@@ -120,31 +131,9 @@ def start_or_resume_ingestion(connection, request, pipeline_run_id):
                 )
 
             # This is the first run for this process key. Seed it with the
-            # explicit request cursors, if the caller supplied any.
+            # explicit request cursors supplied by the caller.
             resume_before_cursor = request.get("initial_before_cursor")
             resume_after_cursor = request.get("initial_after_cursor")
-            if request["mode"] == "catchup" and resume_after_cursor is None:
-                # A page-count catch-up begins from the live stream's last
-                # committed `after` cursor, so it does not disturb live state.
-                cursor.execute(
-                    """
-                    SELECT resume_after_cursor
-                    FROM control.trade_ingestions
-                    WHERE process_key = %(live_process_key)s
-                    """,
-                    {
-                        "live_process_key": live_process_key(
-                            request["source"], request["product_id"]
-                        )
-                    },
-                )
-                live_ingestion = cursor.fetchone()
-                resume_after_cursor = live_ingestion[0] if live_ingestion else None
-                if resume_after_cursor is None:
-                    raise ValueError(
-                        "catch-up requires an explicit after_cursor or a committed "
-                        "live cursor"
-                    )
 
             cursor.execute(
                 INSERT_TRADE_INGESTION_SQL,
@@ -180,6 +169,69 @@ def committed_after_cursor_exists(connection, product_id, requested_after):
             },
         )
         return cursor.fetchone() is not None
+
+
+def highest_committed_trade_id(connection, source, product_id):
+    """Return the newest trade ID already committed to Silver."""
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            SELECT_HIGHEST_COMMITTED_TRADE_ID_SQL,
+            {"source": source, "product_id": product_id},
+        )
+        return cursor.fetchone()[0]
+
+
+def trade_ingestion_summary(connection, process_key):
+    """Return cumulative totals for one durable catch-up process."""
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            SELECT_TRADE_INGESTION_SUMMARY_SQL,
+            {"process_key": process_key},
+        )
+        row = cursor.fetchone()
+
+    if row is None:
+        raise ValueError(f"trade catch-up process not found: {process_key}")
+
+    (
+        source,
+        product_id,
+        status,
+        pages_committed,
+        trades_committed,
+        initial_after_cursor,
+        resume_after_cursor,
+        created_at,
+        completed_at,
+    ) = row
+    duration_seconds = None
+    if completed_at is not None:
+        duration_seconds = round((completed_at - created_at).total_seconds(), 3)
+
+    return {
+        "source": source,
+        "product_id": product_id,
+        "status": status,
+        "pages_committed": pages_committed,
+        "trades_committed": trades_committed,
+        "initial_after_cursor": initial_after_cursor,
+        "resume_after_cursor": resume_after_cursor,
+        "duration_seconds": duration_seconds,
+    }
+
+
+def trade_ingestion_status(connection, process_key):
+    """Return a catch-up process status, or ``None`` before it is created."""
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            SELECT_TRADE_INGESTION_STATUS_SQL,
+            {"process_key": process_key},
+        )
+        row = cursor.fetchone()
+    return row[0] if row is not None else None
 
 
 def pause_ingestion(connection, process_key):

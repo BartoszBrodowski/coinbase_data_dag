@@ -19,6 +19,7 @@ from candles.gold_load import upsert_gold
 from candles.silver_transform import parse_candles, upsert_candles
 from shared.coinbase_client import COINBASE_SOURCE, CoinbaseResponse
 from trades.gold_load import load_trade_activity_hourly
+from trades.gap_detection import find_newest_trade_gap
 
 
 def _database_settings(database_name):
@@ -153,6 +154,13 @@ class PostgresPipelineIntegrationTest(unittest.TestCase):
                 )
                 trade_activity_table = cursor.fetchone()[0]
 
+                cursor.execute(
+                    """
+                    SELECT to_regclass('silver.trades_coverage_lookup_idx')
+                    """
+                )
+                trade_coverage_index = cursor.fetchone()[0]
+
         self.assertTrue(
             {
                 "bronze_request_key",
@@ -174,6 +182,75 @@ class PostgresPipelineIntegrationTest(unittest.TestCase):
         )
         self.assertNotIn("ingestion_key", process_columns)
         self.assertEqual(trade_activity_table, "gold.trade_activity_hourly")
+        self.assertEqual(
+            trade_coverage_index,
+            "silver.trades_coverage_lookup_idx",
+        )
+
+    def test_trade_gap_detection_returns_an_actionable_cursor(self):
+        older_time = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
+        newer_time = older_time + timedelta(minutes=10)
+        process_key = "integration:gap-detection"
+
+        with self.connection:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO control.trade_ingestions (
+                        process_key, source, product_id, mode,
+                        initial_after_cursor, resume_after_cursor, status
+                    )
+                    VALUES (%s, 'coinbase', 'BTC-USD', 'catchup', %s, %s, 'COMPLETED')
+                    """,
+                    (process_key, "9000", "7000"),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO bronze.coinbase_trades_raw (
+                        bronze_request_key, process_key, product_id,
+                        requested_after, response_cb_after, http_status,
+                        response_body, silver_committed_at
+                    )
+                    VALUES (%s, %s, 'BTC-USD', %s, %s, 200, '[]', CURRENT_TIMESTAMP)
+                    RETURNING ingestion_id
+                    """,
+                    (
+                        "integration:gap-detection:page",
+                        process_key,
+                        "9000",
+                        "8000",
+                    ),
+                )
+                bronze_ingestion_id = cursor.fetchone()[0]
+                cursor.executemany(
+                    """
+                    INSERT INTO silver.trades (
+                        source, product_id, trade_id, price, time, size, side,
+                        bronze_ingestion_id
+                    )
+                    VALUES ('coinbase', 'BTC-USD', %s, 100, %s, 1, 'buy', %s)
+                    """,
+                    (
+                        (5000, older_time, bronze_ingestion_id),
+                        (8000, newer_time, bronze_ingestion_id),
+                    ),
+                )
+
+        gap = find_newest_trade_gap(
+            self.connection,
+            source="coinbase",
+            product_id="BTC-USD",
+            lookback_start=older_time - timedelta(hours=1),
+            eligible_before=newer_time + timedelta(hours=1),
+            minimum_gap_seconds=30,
+            maximum_page_amount=1000,
+        )
+
+        self.assertEqual(gap["older_trade_time"], older_time.isoformat())
+        self.assertEqual(gap["newer_trade_time"], newer_time.isoformat())
+        self.assertEqual(gap["after_cursor"], "8000")
+        self.assertEqual(gap["estimated_page_amount"], 4)
+        self.assertEqual(gap["page_amount"], 4)
 
     def test_trade_activity_hourly_is_idempotent(self):
         first_time = datetime(2026, 2, 1, 10, 15, tzinfo=timezone.utc)

@@ -1,5 +1,6 @@
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -8,8 +9,11 @@ sys.path.insert(0, str(DAGS_DIRECTORY))
 
 from trades.ingestion_state import (
     committed_after_cursor_exists,
+    highest_committed_trade_id,
     live_process_key,
     start_or_resume_ingestion,
+    trade_ingestion_status,
+    trade_ingestion_summary,
     validate_catchup_request,
 )
 from trades.settings import MAX_CATCHUP_PAGE_AMOUNT
@@ -53,13 +57,13 @@ class TradeCatchupRequestTest(unittest.TestCase):
         first = validate_catchup_request(
             "test-exchange",
             "BTC-USD",
-            None,
+            "1068720621",
             100,
         )
         second = validate_catchup_request(
             "test-exchange",
             "BTC-USD",
-            None,
+            "1068720621",
             100,
         )
 
@@ -75,11 +79,11 @@ class TradeCatchupRequestTest(unittest.TestCase):
             validate_catchup_request(
                 "test-exchange",
                 "BTC-USD",
-                None,
+                "1068720621",
                 MAX_CATCHUP_PAGE_AMOUNT + 1,
             )
 
-    def test_normalizes_an_optional_explicit_cursor(self):
+    def test_normalizes_the_required_cursor(self):
         request = validate_catchup_request(
             "test-exchange",
             "BTC-USD",
@@ -91,8 +95,58 @@ class TradeCatchupRequestTest(unittest.TestCase):
         self.assertIsNone(request["oldest_time"])
         self.assertEqual(request["page_amount"], 25)
 
+    def test_rejects_a_missing_or_blank_cursor(self):
+        for after_cursor in (None, "", "   "):
+            with self.subTest(after_cursor=after_cursor):
+                with self.assertRaisesRegex(ValueError, "after_cursor is required"):
+                    validate_catchup_request(
+                        "test-exchange",
+                        "BTC-USD",
+                        after_cursor,
+                        100,
+                    )
+
 
 class TradeCatchupStateTest(unittest.TestCase):
+    def test_reads_process_status_without_failing_before_creation(self):
+        existing_connection = _Connection((("ACTIVE",),))
+        missing_connection = _Connection((None,))
+
+        self.assertEqual(
+            trade_ingestion_status(existing_connection, "catchup:active"),
+            "ACTIVE",
+        )
+        self.assertIsNone(
+            trade_ingestion_status(missing_connection, "catchup:missing")
+        )
+
+    def test_reads_cumulative_completed_catchup_totals(self):
+        created_at = datetime(2026, 8, 24, 10, tzinfo=timezone.utc)
+        completed_at = created_at + timedelta(seconds=125.5)
+        connection = _Connection(
+            (
+                (
+                    "coinbase",
+                    "BTC-USD",
+                    "COMPLETED",
+                    25,
+                    24_327,
+                    "1080500000",
+                    "1080475000",
+                    created_at,
+                    completed_at,
+                ),
+            )
+        )
+
+        summary = trade_ingestion_summary(connection, "catchup:summary")
+
+        self.assertEqual(summary["pages_committed"], 25)
+        self.assertEqual(summary["trades_committed"], 24_327)
+        self.assertEqual(summary["duration_seconds"], 125.5)
+        _, parameters = connection.cursor_instance.executions[0]
+        self.assertEqual(parameters, {"process_key": "catchup:summary"})
+
     def test_live_mode_uses_the_same_process_state(self):
         request = {
             "process_key": live_process_key("test-exchange", "BTC-USD"),
@@ -100,7 +154,7 @@ class TradeCatchupStateTest(unittest.TestCase):
             "product_id": "BTC-USD",
             "mode": "live",
             "oldest_time": None,
-            "cursor_direction": "before",
+            "cursor_direction": "after",
             "initial_before_cursor": None,
             "initial_after_cursor": None,
         }
@@ -118,14 +172,14 @@ class TradeCatchupStateTest(unittest.TestCase):
         insert_parameters = connection.cursor_instance.executions[1][1]
         self.assertIsNone(insert_parameters["resume_before_cursor"])
 
-    def test_new_page_count_job_starts_from_live_watermark(self):
+    def test_new_page_count_job_starts_from_explicit_cursor(self):
         request = validate_catchup_request(
             "test-exchange",
             "BTC-USD",
-            None,
+            "explicit-cursor",
             100,
         )
-        connection = _Connection((None, ("live-cursor",)))
+        connection = _Connection((None,))
 
         cursor, status, pages_committed = start_or_resume_ingestion(
             connection,
@@ -135,34 +189,28 @@ class TradeCatchupStateTest(unittest.TestCase):
 
         self.assertEqual(
             (cursor, status, pages_committed),
-            ("live-cursor", "ACTIVE", 0),
+            ("explicit-cursor", "ACTIVE", 0),
         )
         self.assertTrue(connection.committed)
-        self.assertEqual(len(connection.cursor_instance.executions), 3)
-        insert_parameters = connection.cursor_instance.executions[2][1]
-        self.assertEqual(insert_parameters["initial_after_cursor"], "live-cursor")
-        self.assertEqual(insert_parameters["resume_after_cursor"], "live-cursor")
-
-    def test_new_page_count_job_requires_a_live_or_explicit_cursor(self):
-        request = validate_catchup_request(
-            "test-exchange",
-            "BTC-USD",
-            None,
-            100,
+        self.assertEqual(len(connection.cursor_instance.executions), 2)
+        insert_parameters = connection.cursor_instance.executions[1][1]
+        self.assertEqual(
+            insert_parameters["initial_after_cursor"],
+            "explicit-cursor",
         )
-        connection = _Connection((None, None))
+        self.assertEqual(
+            insert_parameters["resume_after_cursor"],
+            "explicit-cursor",
+        )
 
-        with self.assertRaisesRegex(ValueError, "committed live cursor"):
-            start_or_resume_ingestion(connection, request, "run-1")
-
-    def test_existing_live_job_resumes_from_before_cursor(self):
+    def test_existing_live_continuation_resumes_from_after_cursor(self):
         request = {
             "process_key": live_process_key("test-exchange", "BTC-USD"),
             "source": "test-exchange",
             "product_id": "BTC-USD",
             "mode": "live",
             "oldest_time": None,
-            "cursor_direction": "before",
+            "cursor_direction": "after",
             "initial_before_cursor": None,
             "initial_after_cursor": None,
         }
@@ -178,14 +226,14 @@ class TradeCatchupStateTest(unittest.TestCase):
 
         self.assertEqual(
             (cursor, status, pages_committed),
-            ("saved-before", "ACTIVE", 12),
+            ("saved-after", "ACTIVE", 12),
         )
 
     def test_existing_job_resumes_from_its_committed_cursor(self):
         request = validate_catchup_request(
             "test-exchange",
             "BTC-USD",
-            None,
+            "initial-cursor",
             100,
         )
         connection = _Connection(((None, "saved-cursor", "PAUSED", 8),))
@@ -216,6 +264,22 @@ class TradeCatchupStateTest(unittest.TestCase):
         _, parameters = connection.cursor_instance.executions[0]
         self.assertEqual(parameters["product_id"], "BTC-USD")
         self.assertEqual(parameters["requested_after"], "1068720621")
+
+    def test_reads_the_highest_committed_silver_trade_id(self):
+        connection = _Connection(((1068720622,),))
+
+        trade_id = highest_committed_trade_id(
+            connection,
+            "coinbase",
+            "BTC-USD",
+        )
+
+        self.assertEqual(trade_id, 1068720622)
+        _, parameters = connection.cursor_instance.executions[0]
+        self.assertEqual(
+            parameters,
+            {"source": "coinbase", "product_id": "BTC-USD"},
+        )
 
 
 if __name__ == "__main__":

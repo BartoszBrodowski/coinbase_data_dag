@@ -42,7 +42,7 @@ flowchart LR
 |---|---|---|---|
 | Candles | Hourly | Bronze → Silver → Gold | Closed Airflow intervals, API retries, typed validation, idempotent upserts |
 | Candle backfill | Manual | Bronze → Silver → Gold | Validated bounded range, requests split at the 300-candle API limit, dynamic task mapping |
-| Live trades | Every 15 minutes | Bronze → Silver + Gold activity + Control | Cursor pagination, bounded polling, watermark advances only after Silver commits |
+| Live trades | Every 15 minutes | Bronze → Silver + Gold activity + Control | Newest-page snapshot, bounded backward continuation to committed coverage, watermark advances only after Silver commits |
 | Trade catch-up | Manual page count | Bronze → Silver + Gold activity + Control | Automatic four-page batches, exact-cursor overlap detection, separate historical cursor |
 
 Retention and capacity reporting remain roadmap items. The dashboard exposes
@@ -140,23 +140,36 @@ Open the `load_silver` task log and search for the same stage summary and
 coverage warning messages. The `load_gold` log reports the number of rows
 written to the dashboard-facing layer.
 
-To demonstrate the trade path, wait for the scheduled 15-minute run of
-`coinbase_trades_live`. Wait for `resolve_live_ingestion_request`,
+To demonstrate the trade path, trigger `coinbase_trades_live` manually or wait
+for its scheduled 15-minute run. Manual and scheduled runs use the same durable
+coverage boundary. Each run fetches at most three pages and automatically
+continues in another bounded run until it overlaps prior Silver coverage. Wait
+for `resolve_live_ingestion_request`,
 `ingest_bronze_pages`, `load_silver_pages`, and `load_gold_trade_activity` to
 finish. Then open the dashboard's **Trade activity** tab. It displays hourly
 trade count, VWAP, base and quote volume, and maker buy/sell counts from the
 Gold aggregate.
 
 For older trade history, open `coinbase_trades_catchup`, use **Trigger DAG**,
-and set `page_amount` to the total number of Coinbase pages to fetch. Leave
-`after_cursor` empty to start from the live stream's last committed historical
-cursor. This unscheduled DAG has no mode or date-range input; after the initial
-manual run, its bounded batches continue internally. Airflow
+set `after_cursor` to the historical boundary from which older pages should be
+fetched, and set `page_amount` to the total number of Coinbase pages to fetch.
+The cursor is required; the catch-up DAG never chooses an implicit live cursor.
+This unscheduled DAG has no mode or date-range input; after the initial manual
+run, its bounded batches continue internally. Airflow
 processes the request automatically in serial batches of four pages until the
 requested amount, the end of history, or an exact cursor page already committed
-to Silver is reached. Airflow's built-in **Backfill** action is not available
-for either trade DAG because logical schedule dates cannot select pages from
+to Silver is reached. Airflow's built-in **Backfill** action remains unavailable
+for both trade DAGs because logical schedule dates cannot select pages from
 Coinbase's cursor-only trades endpoint.
+
+For guided repair, trigger `coinbase_trades_gap_repair` instead. It checks the
+last seven days for the newest stable trade gap and, when one is found, pauses
+at `approve_gap_repair`. Open that task's required action to review the exact
+time range, cursor, and proposed page count. Choose **Approve** to trigger the
+existing catch-up DAG or **Reject** to finish without fetching data. The newest
+30 minutes are excluded from detection to avoid flagging an in-progress live
+load. Run the detector again after an approved repair to verify that gap and
+propose the next one.
 
 When finished, stop the containers without deleting their volumes:
 
