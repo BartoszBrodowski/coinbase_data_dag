@@ -55,8 +55,23 @@ class _Connection:
 
 class TradeSilverTransformTest(unittest.TestCase):
     def test_parses_fixture_into_typed_utc_trades(self):
-        fixture = (Path(__file__).parents[2] / "example_data" / "trades.json").read_text(
-            encoding="utf-8"
+        fixture = json.dumps(
+            [
+                {
+                    "trade_id": 1068720622,
+                    "side": "sell",
+                    "size": "0.00077203",
+                    "price": "65139.75000000",
+                    "time": "2026-08-10T09:22:43.388127Z",
+                },
+                {
+                    "trade_id": 1068720621,
+                    "side": "buy",
+                    "size": "0.00015351",
+                    "price": "65139.74000000",
+                    "time": "2026-08-10T09:22:42.862482Z",
+                },
+            ]
         )
 
         trades = parse_trades(fixture)

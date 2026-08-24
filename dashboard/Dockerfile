@@ -1,9 +1,10 @@
-FROM python:3.13-slim
+ARG PYTHON_IMAGE_NAME=python:3.13.15-slim-bookworm
+FROM ${PYTHON_IMAGE_NAME}
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.lock .
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 
 COPY . .
 

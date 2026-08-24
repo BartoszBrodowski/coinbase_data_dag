@@ -52,9 +52,9 @@ layer and are not queried directly by the UI.
 ## Technology
 
 - Apache Airflow 3.3.0 with LocalExecutor
-- PostgreSQL 13
+- PostgreSQL 13.23
 - Flyway 13
-- Python 3.13
+- Python 3.13 (3.13.15 for the dashboard image)
 - Streamlit and Plotly
 - Docker Compose
 
@@ -62,14 +62,23 @@ layer and are not queried directly by the UI.
 
 ### Prerequisites
 
-- Docker Desktop with Docker Compose
-- PowerShell 7 or Windows PowerShell 5.1 for the helper scripts
+- Docker Desktop with Docker Compose on Windows or macOS, or Docker Engine
+  with the Compose plugin on Linux
+- PowerShell 7 or Windows PowerShell 5.1 on Windows; Bash on macOS or Linux
 - Free local ports `8080`, `8501`, and `5050`
 
 ### 1. Configure local credentials
 
+Windows PowerShell:
+
 ```powershell
 Copy-Item .env.example .env
+```
+
+macOS or Linux:
+
+```bash
+cp .env.example .env
 ```
 
 Replace every `change-me` value in `.env`. Keep this file local; Git ignores
@@ -78,8 +87,16 @@ embedded in an Airflow connection URI.
 
 ### 2. Apply migrations and start the stack
 
+Windows PowerShell:
+
 ```powershell
-./scripts/start.ps1
+.\scripts\start.ps1
+```
+
+macOS or Linux:
+
+```bash
+bash ./scripts/start.sh
 ```
 
 The script validates the Compose configuration, provisions the application
@@ -173,16 +190,22 @@ propose the next one.
 
 When finished, stop the containers without deleting their volumes:
 
-```powershell
+```bash
 docker compose down
 ```
 
 ## Verification
 
-Run the complete local verification suite with:
+Run the complete local verification suite on Windows with:
 
 ```powershell
-./scripts/verify.ps1
+.\scripts\verify.ps1
+```
+
+On macOS or Linux, run:
+
+```bash
+bash ./scripts/verify.sh
 ```
 
 It performs four checks:
@@ -198,12 +221,27 @@ The integration suite refuses to run against a database whose name does not
 end in `_test`. It never drops or rebuilds the development `market_data`
 database.
 
-For lightweight static checks outside Docker:
+### Reproducible environment
 
-```powershell
-python -m pip install -r requirements-dev.txt
-ruff check .
+Docker is the canonical runtime, so cloning the repository does not require a
+matching host Python installation. `.env.example` pins patch-level Airflow,
+PostgreSQL, Flyway, pgAdmin, and dashboard Python image versions. The
+dashboard's direct dependencies are declared in
+`dashboard/requirements.txt`; all transitive versions and distribution hashes
+are captured in `dashboard/requirements.lock`, which is what its image
+installs.
+
+After deliberately changing a direct dashboard dependency, regenerate the
+lock with Python 3.13 and `uv`:
+
+```bash
+uv pip compile dashboard/requirements.txt --universal --python-version 3.13 \
+  --generate-hashes --output-file dashboard/requirements.lock
 ```
+
+Commit the declaration and lock-file changes together. Service image upgrades
+are made explicitly in `.env.example` and the matching Compose defaults, then
+validated with the complete verification suite.
 
 ## Reliability decisions
 
@@ -244,12 +282,12 @@ postgres/             Database and role provisioning
 tests/unit/           Network-free unit tests
 tests/integration/    Isolated PostgreSQL migration and pipeline tests
 docs/                 Operational and data-contract documentation
-TODO/                 Explicit roadmap and completion criteria
 scripts/              One-command startup and verification helpers
 ```
 
-More detailed design notes are in [ARCHITECTURE.md](ARCHITECTURE.md). Operational
-guides cover the [scheduled candle DAG](docs/airflow-dag.md),
+The architecture diagram and implemented-pipeline summary above are the
+canonical high-level design. Operational guides cover the
+[scheduled candle DAG](docs/airflow-dag.md),
 [backfills](docs/backfill-dag.md), [trade ingestion](docs/trades-dag.md),
 [database roles](docs/database-access.md), and the
 [Gold contract](docs/gold-layer.md).
@@ -262,10 +300,13 @@ guides cover the [scheduled candle DAG](docs/airflow-dag.md),
 - Data validation is enforced during parsing and by PostgreSQL constraints,
   but quality results and freshness history are not yet persisted as a
   separate DAG stage.
-- Trade aggregation, measured retention, and capacity reporting remain open in
-  [TODO/TICKETS.md](TODO/TICKETS.md).
+- Measured retention and capacity reporting are not implemented.
 - The stack is intentionally local. Kafka, Kubernetes, cloud infrastructure,
   and multiple exchanges are outside the current scope.
 
 These constraints are intentional: the current release prioritizes a small,
 reproducible pipeline with explicit failure and replay behavior.
+
+## License
+
+This project is available under the [MIT License](LICENSE).
