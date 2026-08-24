@@ -4,12 +4,18 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock, patch
 
 DAGS_DIRECTORY = Path(__file__).parents[2] / "dags"
 sys.path.insert(0, str(DAGS_DIRECTORY))
 
-from candles.silver_transform import parse_candles, upsert_candles
+from candles.silver_transform import (
+    calculate_candle_coverage,
+    parse_candles,
+    parse_candles_with_stats,
+    transform_bronze_to_silver,
+    upsert_candles,
+)
 
 
 VALID_CANDLE_RESPONSE = json.dumps(
@@ -74,6 +80,68 @@ class SilverTransformTest(unittest.TestCase):
         candles = self.parse(json.dumps([fixture[0], fixture[0]]))
 
         self.assertEqual(len(candles), 1)
+
+    def test_parse_stats_distinguish_duplicates_and_out_of_range_records(self):
+        fixture = json.loads(self.response_body)
+        preceding = fixture[0].copy()
+        preceding[0] = int((self.start - timedelta(hours=1)).timestamp())
+
+        result = parse_candles_with_stats(
+            json.dumps([preceding, fixture[0], fixture[0]]),
+            source="test-exchange",
+            product_id="BTC-USD",
+            granularity_seconds=3600,
+            requested_start=self.start,
+            requested_end=self.end,
+            bronze_ingestion_id=42,
+        )
+
+        self.assertEqual(result.records_fetched, 3)
+        self.assertEqual(result.records_accepted, 2)
+        self.assertEqual(result.duplicate_records, 1)
+        self.assertEqual(result.records_outside_interval, 1)
+
+    def test_candle_coverage_reports_missing_buckets_without_failing(self):
+        coverage = calculate_candle_coverage(
+            self.parse(),
+            requested_start=self.start,
+            requested_end=self.end + timedelta(hours=1),
+            granularity_seconds=3600,
+        )
+
+        self.assertEqual(coverage.expected_buckets, 2)
+        self.assertEqual(coverage.actual_buckets, 1)
+        self.assertEqual(coverage.missing_buckets, 1)
+
+    def test_transform_logs_partial_coverage_without_failing(self):
+        cursor = MagicMock()
+        cursor.fetchone.return_value = (
+            "BTC-USD",
+            3600,
+            self.start,
+            self.end + timedelta(hours=1),
+            self.response_body,
+        )
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        connection.cursor.return_value.__enter__.return_value = cursor
+
+        with patch("candles.silver_transform.market_data_connection", return_value=connection):
+            with self.assertLogs("candles.silver_transform", level="INFO") as logs:
+                rows_processed = transform_bronze_to_silver(42, source="test-exchange")
+
+        self.assertEqual(rows_processed, 1)
+        self.assertTrue(
+            any(
+                "stage=silver" in message
+                and "missing_buckets=1" in message
+                and "coverage_status=partial" in message
+                for message in logs.output
+            )
+        )
+        self.assertTrue(
+            any("coinbase_candle_coverage_partial" in message for message in logs.output)
+        )
 
     def test_rejects_conflicting_duplicate_candles(self):
         fixture = json.loads(self.response_body)

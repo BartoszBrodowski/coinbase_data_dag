@@ -15,10 +15,11 @@ Both dates must include a timezone, for example `2025-01-01T00:00:00Z`.
 The first task validates the input and divides the range into consecutive
 requests of no more than 300 candles. Airflow dynamically maps the Bronze,
 Silver, and Gold tasks over those intervals. At most two Coinbase requests run
-at once, only the API tasks are retried, and one Gold quality check runs after
-all mapped intervals finish.
+at once, and only the API tasks are retried. Payload validation happens while
+loading Silver, while database constraints protect the Silver and Gold
+contracts. A separate persisted quality-results stage remains roadmap work.
 
 For example, one year of hourly candles becomes 30 API requests instead of one
 request that Coinbase rejects. Re-running the DAG is safe because Silver and
 Gold use upserts; each individual run and mapped interval also receives its own
-Bronze ingestion key.
+`bronze_request_key`.

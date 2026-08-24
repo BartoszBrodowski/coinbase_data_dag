@@ -11,6 +11,7 @@ sys.path.insert(0, str(DAGS_DIRECTORY))
 
 from trades.silver_transform import (
     parse_trades,
+    parse_trades_with_stats,
     transform_bronze_to_silver,
 )
 
@@ -96,6 +97,32 @@ class TradeSilverTransformTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid maker side"):
             parse_trades(payload)
 
+    def test_parse_stats_count_fetched_accepted_and_duplicates(self):
+        payload = json.dumps(
+            [
+                {
+                    "trade_id": 1,
+                    "price": "1",
+                    "size": "1",
+                    "time": "2026-08-10T09:22:43Z",
+                    "side": "buy",
+                },
+                {
+                    "trade_id": 1,
+                    "price": "1",
+                    "size": "1",
+                    "time": "2026-08-10T09:22:43Z",
+                    "side": "buy",
+                },
+            ]
+        )
+
+        result = parse_trades_with_stats(payload)
+
+        self.assertEqual(result.records_fetched, 2)
+        self.assertEqual(result.records_accepted, 2)
+        self.assertEqual(result.duplicate_records, 1)
+
     def test_commits_silver_before_advancing_the_watermark(self):
         bronze = (
             91,
@@ -113,11 +140,21 @@ class TradeSilverTransformTest(unittest.TestCase):
         )
         connection = _Connection(bronze)
 
-        rows_processed = transform_bronze_to_silver(connection, 91)
+        with self.assertLogs("trades.silver_transform", level="INFO") as logs:
+            rows_processed = transform_bronze_to_silver(connection, 91)
 
         self.assertEqual(
             rows_processed,
             {"trades_processed": 1, "completed": False},
+        )
+        self.assertTrue(
+            any(
+                "stage=silver" in message
+                and "records_fetched=1" in message
+                and "records_accepted=1" in message
+                and "records_written=1" in message
+                for message in logs.output
+            )
         )
         self.assertTrue(connection.committed)
         self.assertEqual(connection.cursor_instance.batch[1][0][2], 1068720622)

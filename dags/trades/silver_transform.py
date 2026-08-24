@@ -31,14 +31,30 @@ class Trade:
     side: str
 
 
+@dataclass(frozen=True)
+class TradeParseResult:
+    trades: list[Trade]
+    records_fetched: int
+    records_accepted: int
+    duplicate_records: int
+
+
 def parse_trades(response_body):
     """Parse and validate a Coinbase page, deduplicating identical trades."""
+
+    return parse_trades_with_stats(response_body).trades
+
+
+def parse_trades_with_stats(response_body):
+    """Parse a Coinbase page and retain small, task-log-friendly counts."""
 
     payload = json.loads(response_body)
     if not isinstance(payload, list):
         raise ValueError("Coinbase trades payload must be a list")
 
     trades_by_id = {}
+    duplicate_records = 0
+    records_accepted = 0
     for index, item in enumerate(payload):
         if not isinstance(item, dict):
             raise ValueError(f"trade {index} must be an object")
@@ -62,12 +78,22 @@ def parse_trades(response_body):
             raise ValueError(f"trade {index} has an invalid size")
 
         trade = Trade(trade_id, price, trade_time, size, side)
+        records_accepted += 1
         existing = trades_by_id.get(trade_id)
         if existing is not None and existing != trade:
             raise ValueError(f"conflicting values for trade_id {trade_id}")
+        if existing is not None:
+            duplicate_records += 1
+            continue
         trades_by_id[trade_id] = trade
 
-    return sorted(trades_by_id.values(), key=lambda trade: trade.trade_id)
+    trades = sorted(trades_by_id.values(), key=lambda trade: trade.trade_id)
+    return TradeParseResult(
+        trades=trades,
+        records_fetched=len(payload),
+        records_accepted=records_accepted,
+        duplicate_records=duplicate_records,
+    )
 
 
 def transform_bronze_to_silver(connection, ingestion_id):
@@ -99,7 +125,8 @@ def transform_bronze_to_silver(connection, ingestion_id):
             if not 200 <= http_status < 300:
                 raise ValueError(f"Bronze trade ingestion {ingestion_id} has HTTP {http_status}")
 
-            page_trades = parse_trades(response_body)
+            parse_result = parse_trades_with_stats(response_body)
+            page_trades = parse_result.trades
             reached_time_boundary = bool(
                 oldest_time is not None
                 and (
@@ -152,9 +179,17 @@ def transform_bronze_to_silver(connection, ingestion_id):
             )
 
     logger.info(
-        "coinbase_trades_silver_committed ingestion_id=%s record_count=%s",
+        "market_data_stage_summary stage=silver ingestion_id=%s product_id=%s "
+        "records_fetched=%s records_accepted=%s duplicate_records=%s "
+        "records_filtered_by_boundary=%s records_written=%s completed=%s",
         ingestion_id,
+        product_id,
+        parse_result.records_fetched,
+        parse_result.records_accepted,
+        parse_result.duplicate_records,
+        len(page_trades) - len(trades),
         len(trades),
+        completed,
     )
     return {
         "trades_processed": len(trades),

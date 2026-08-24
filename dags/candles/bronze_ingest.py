@@ -102,15 +102,16 @@ def ingest_one_interval(
     record_count = len(payload) if isinstance(payload, list) else 0
 
     logger.info(
-        "coinbase_bronze_saved "
+        "market_data_stage_summary stage=bronze "
         "product_id=%s granularity_seconds=%s "
-        "start=%s end=%s record_count=%s "
+        "start=%s end=%s records_fetched=%s raw_response_saved=%s "
         "http_status=%s duration_ms=%s ingestion_id=%s",
         product_id,
         granularity_seconds,
         start.isoformat(),
         end.isoformat(),
         record_count,
+        1,
         response.status_code,
         response.duration_ms,
         ingestion_id,

@@ -22,7 +22,7 @@ def load_silver_to_gold(ingestion_id):
                 rows_processed = upsert_gold(cursor, ingestion_id)
 
     logger.info(
-        "gold_candles_upserted ingestion_id=%s record_count=%s",
+        "market_data_stage_summary stage=gold ingestion_id=%s records_written=%s",
         ingestion_id,
         rows_processed,
     )

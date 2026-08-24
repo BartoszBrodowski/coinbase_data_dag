@@ -40,7 +40,7 @@
 **Cel:** zachować surową odpowiedź i kontekst pobrania.
 
 - [x] Pobierz tylko jeden mały, jawny przedział czasu.
-- [ ] Ustaw timeout oraz ograniczone retry.
+- [x] Ustaw timeout oraz ograniczone retry.
 - [x] Zapisz payload i metadane zapytania w jednej transakcji.
 - [x] Loguj zakres, produkt oraz liczbę rekordów; nie loguj sekretów.
 - [x] Zdefiniuj bezpieczne zachowanie przy ponownym uruchomieniu.
@@ -76,7 +76,8 @@
 
 - [x] Zdefiniuj harmonogram, `start_date`, `catchup` i retry.
 - [x] Użyj przedziału danych przekazanego przez Airflow.
-- [x] Ułóż zależności: ingest → Silver → Gold → test jakości.
+- [x] Ułóż zależności: ingest → Silver → Gold.
+- [ ] Dodaj osobny krok zapisujący wyniki jakości i świeżości.
 - [x] Przekazuj między zadaniami małe metadane, a nie całe payloady.
 - [x] Przetestuj ręczny run i ponowienie nieudanego zadania.
 
@@ -98,19 +99,22 @@
 
 **Cel:** wykrywać problemy, zanim trafią na wykres.
 
-- [x] Sprawdzaj unikalność, wartości null, kolejność OHLC i luki czasowe.
-- [ ] Rozróżnij błędy chwilowe API od błędów danych.
-- [ ] Dodaj test integracyjny z PostgreSQL.
-- [ ] Zmierz liczbę rekordów pobranych, odrzuconych i zapisanych.
-- [ ] Opisz procedurę małego backfillu i ponowienia zadania.
+- [x] Sprawdzaj unikalność, wartości null i kolejność OHLC.
+- [ ] Dodaj kontrolę luk i świeżości z zapisem wyniku.
+- [x] Rozróżnij błędy chwilowe API od błędów danych.
+- [x] Dodaj test integracyjny z PostgreSQL.
+- [x] Loguj w Airflow liczbę rekordów pobranych, zaakceptowanych, zduplikowanych,
+  odfiltrowanych i zapisanych; nie zapisuj tych liczników w bazie.
+- [x] Opisz procedurę małego backfillu i ponowienia zadania.
 
 **Gotowe, gdy:** celowo uszkodzony fixture powoduje czytelny błąd odpowiedniego zadania.
 
 ## Proponowana kolejność dalszego rozwoju
 
-Przed rozpoczęciem nowych przypadków użycia warto dokończyć TICKET-009. W
-szczególności retry zależne od rodzaju błędu, metryki liczby rekordów i test
-integracyjny będą bazą dla kolejnych DAG-ów.
+Przed rozpoczęciem nowych przypadków użycia warto dokończyć pozostałą część
+TICKET-009. W szczególności kontrola luk i świeżości z trwałym wynikiem będzie
+stanowić bazę dla kolejnych DAG-ów; liczniki etapów są już dostępne w logach
+Airflow bez powiększania modelu danych.
 
 Aktualne priorytety to TICKET-010, TICKET-011 i TICKET-012. Rekomendowana
 kolejność implementacji to TICKET-010 → 011 → 012 → 013, a następnie dalsze

@@ -76,6 +76,54 @@ x-airflow-common:
       condition: service_healthy
 
 services:
+  unit-tests:
+    image: ${AIRFLOW_IMAGE_NAME}
+    profiles:
+      - test
+    working_dir: /workspace
+    environment:
+      PYTHONPATH: /workspace/dags
+      PYTHONPYCACHEPREFIX: /tmp/pycache
+    volumes:
+      - ./:/workspace:ro
+    command:
+      - python
+      - -m
+      - unittest
+      - discover
+      - -s
+      - tests/unit
+      - -v
+
+  integration-tests:
+    image: ${AIRFLOW_IMAGE_NAME}
+    profiles:
+      - test
+    working_dir: /workspace
+    environment:
+      PYTHONPATH: /workspace/dags
+      PYTHONPYCACHEPREFIX: /tmp/pycache
+      RUN_INTEGRATION_TESTS: "1"
+      TEST_POSTGRES_HOST: postgres
+      TEST_POSTGRES_PORT: 5432
+      TEST_POSTGRES_USER: ${POSTGRES_USER}
+      TEST_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TEST_POSTGRES_MAINTENANCE_DB: ${POSTGRES_DB}
+      TEST_DATABASE_NAME: market_data_integration_test
+    volumes:
+      - ./:/workspace:ro
+    command:
+      - python
+      - -m
+      - unittest
+      - discover
+      - -s
+      - tests/integration
+      - -v
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: postgres:13
     environment:

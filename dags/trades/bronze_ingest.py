@@ -120,13 +120,22 @@ def ingest_trade_page(
 
     response.raise_for_status()
 
+    try:
+        payload = json.loads(response.body)
+        records_fetched = len(payload) if isinstance(payload, list) else 0
+    except (TypeError, json.JSONDecodeError):
+        records_fetched = "unknown"
+
     logger.info(
-        "coinbase_trades_bronze_saved product_id=%s ingestion_id=%s "
-        "http_status=%s duration_ms=%s",
+        "market_data_stage_summary stage=bronze product_id=%s "
+        "records_fetched=%s raw_response_saved=%s http_status=%s "
+        "duration_ms=%s ingestion_id=%s",
         product_id,
-        ingestion_id,
+        records_fetched,
+        1,
         response.status_code,
         response.duration_ms,
+        ingestion_id,
     )
     return {
         "ingestion_id": ingestion_id,

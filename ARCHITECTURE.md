@@ -33,7 +33,7 @@ flowchart LR
         BVALID[Sprawdź odpowiedź API]
         SILVER[Normalizuj typy i usuń duplikaty]
         GOLD[Przygotuj dane do odczytu]
-        DQ[Test jakości danych]
+        DQ[Planowane:<br/>historia jakości i świeżości]
     end
 
     subgraph POSTGRES[PostgreSQL: market_data]
@@ -46,7 +46,8 @@ flowchart LR
 
     API --> CHECK --> FETCH --> BVALID --> B
     B --> SILVER --> S
-    S --> GOLD --> G --> DQ
+    S --> GOLD --> G
+    G -.-> DQ
     G --> UI
 ```
 
@@ -69,7 +70,9 @@ a Gold jest stabilnym kontraktem dla interfejsu.
 3. Nieprzetworzona odpowiedź oraz metadane trafiają do Bronze.
 4. Transformacja odczytuje Bronze i zapisuje poprawne, unikalne rekordy do Silver.
 5. Transformacja Gold przygotowuje kontrakt odczytowy dla wykresu.
-6. Test jakości sprawdza m.in. unikalność, kolejność OHLC i brak luk.
+6. Walidacja payloadu i relacji OHLC odbywa się przy zapisie Silver, a
+   ograniczenia PostgreSQL chronią kontrakt tabel. Osobna historia wyników
+   jakości i świeżości pozostaje zaplanowana.
 7. Interfejs pobiera wyłącznie dane Gold; nie wywołuje Coinbase.
 
 ## Proponowany model danych
@@ -143,4 +146,3 @@ MarketDataHandcoded/
 - Dane sekundowe i aktualizacja w czasie rzeczywistym.
 - Rozbudowane narzędzie transformacji, np. dbt. Warto je rozważyć dopiero, gdy
   liczba modeli SQL zacznie utrudniać testowanie i śledzenie zależności.
-
